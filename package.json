@@ -1,7 +1,7 @@
 {
-  "name": "agent",
+  "name": "agentfetch",
   "version": "0.1.0-beta",
-  "description": "",
+  "description": "request agent base on fetch",
   "main": "/lib/index.js",
   "module": "esmodule",
   "scripts": {
