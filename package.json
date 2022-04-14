@@ -1,6 +1,6 @@
 {
   "name": "agentfetch",
-  "version": "0.1.0-beta",
+  "version": "0.1.1",
   "description": "request agent base on fetch",
   "main": "/lib/index.js",
   "module": "esmodule",
@@ -9,7 +9,9 @@
     "build": "rm -rf ./lib && rm -rf ./esm && rm -rf ./umd && rollup -c ./rollup.config.js"
   },
   "author": "lanbenhua",
-  "contributors": ["lanbenhua"],
+  "contributors": [
+    "lanbenhua"
+  ],
   "license": "ISC",
   "devDependencies": {
     "@rollup/plugin-typescript": "^8.3.2",
