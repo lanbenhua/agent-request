@@ -1,0 +1,21 @@
+{
+  "name": "agent",
+  "version": "0.1.0-beta",
+  "description": "",
+  "main": "/lib/index.js",
+  "module": "esmodule",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "rm -rf ./lib && rm -rf ./esm && rm -rf ./umd && rollup -c ./rollup.config.js"
+  },
+  "author": "lanbenhua",
+  "contributors": ["lanbenhua"],
+  "license": "ISC",
+  "devDependencies": {
+    "@rollup/plugin-typescript": "^8.3.2",
+    "rollup": "^2.70.1",
+    "tslib": "^2.3.1",
+    "typescript": "^4.6.3"
+  },
+  "dependencies": {}
+}
