@@ -1,5 +1,31 @@
+/*! *****************************************************************************
+Copyright (c) Microsoft Corporation.
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+***************************************************************************** */
+
+var __assign = function() {
+    __assign = Object.assign || function __assign(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p)) t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
+};
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const stringify = (value, replacer, space) => {
+var stringify = function (value, replacer, space) {
     try {
         return JSON.stringify(value, replacer, space);
     }
@@ -9,12 +35,11 @@ const stringify = (value, replacer, space) => {
     }
 };
 
-class BodyParser {
-    _contentType;
-    constructor(contentType) {
+var BodyParser = /** @class */ (function () {
+    function BodyParser(contentType) {
         this._contentType = contentType;
     }
-    marshal(body) {
+    BodyParser.prototype.marshal = function (body) {
         if (body === "" || body === null || body === undefined)
             return body;
         if (body instanceof FormData)
@@ -30,11 +55,12 @@ class BodyParser {
         }
         if (this._contentType === "form" /* FORM */ && isPlainObject(body)) {
             return Object.entries(body)
-                .reduce((o, [key, value]) => {
+                .reduce(function (o, _a) {
+                var key = _a[0], value = _a[1];
                 if (isNil(value))
                     return o;
                 if (Array.isArray(value)) {
-                    value.forEach((v) => {
+                    value.forEach(function (v) {
                         if (!isNil(v))
                             o.append(key, searchParamsStringify(v));
                     });
@@ -46,8 +72,9 @@ class BodyParser {
                 .toString();
         }
         return body;
-    }
-}
+    };
+    return BodyParser;
+}());
 function isNil(obj) {
     return obj === null || obj === undefined;
 }
@@ -90,12 +117,12 @@ function isPlainObject(o) {
     return true;
 }
 
-class InterceptorManager {
-    handlers = [];
-    constructor() {
+var InterceptorManager = /** @class */ (function () {
+    function InterceptorManager() {
+        this.handlers = [];
         this.handlers = [];
     }
-    use(onFulfilled, onRejected, options) {
+    InterceptorManager.prototype.use = function (onFulfilled, onRejected, options) {
         this.handlers = this.handlers.concat({
             onFulfilled: onFulfilled,
             onRejected: onRejected,
@@ -103,30 +130,31 @@ class InterceptorManager {
             runWhen: options ? options.runWhen : null,
         });
         return this.handlers.length - 1;
-    }
-    reject(id) {
+    };
+    InterceptorManager.prototype.reject = function (id) {
         if (this.handlers[id]) {
             this.handlers[id] = null;
         }
-    }
-    forEach(h) {
-        this.handlers.forEach((handler, index) => {
+    };
+    InterceptorManager.prototype.forEach = function (h) {
+        this.handlers.forEach(function (handler, index) {
             if (handler !== null) {
                 h(handler, index);
             }
         });
-    }
-}
+    };
+    return InterceptorManager;
+}());
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const originFetch = window.fetch;
+var originFetch = window.fetch;
 /**
  * application/x-www-form-urlencoded
  * multipart/form-data
  * text/plain
  * application/json
  */
-const ContentTypeMap = {
+var ContentTypeMap = {
     json: "application/json; charset=utf-8",
     form: "application/x-www-form-urlencoded; charset=utf-8",
     formdata: undefined,
@@ -134,66 +162,63 @@ const ContentTypeMap = {
     text: "text/plain; charset=utf-8",
     blob: undefined,
 };
-class Agent {
-    _base;
-    _init;
-    _dafaultInit = {
-        timeout: 20000,
-        includeAbort: true,
-    };
-    _timer;
-    _abortController;
-    _interceptors = {
-        request: new InterceptorManager(),
-        response: new InterceptorManager(),
-    };
-    get interceptors() {
-        return this._interceptors;
-    }
-    constructor(base, init) {
+var Agent = /** @class */ (function () {
+    function Agent(base, init) {
+        this._dafaultInit = {
+            timeout: 20000,
+            includeAbort: true,
+        };
+        this._interceptors = {
+            request: new InterceptorManager(),
+            response: new InterceptorManager(),
+        };
         this._base = base;
         this._init = init;
     }
+    Object.defineProperty(Agent.prototype, "interceptors", {
+        get: function () {
+            return this._interceptors;
+        },
+        enumerable: false,
+        configurable: true
+    });
     // eslint-disable-next-line
-    abort(reason) {
+    Agent.prototype.abort = function (reason) {
+        var _a;
         // @ts-ignore
-        this._abortController?.abort(reason);
-    }
-    request(reqInit) {
+        (_a = this._abortController) === null || _a === void 0 ? void 0 : _a.abort(reason);
+    };
+    Agent.prototype.request = function (reqInit) {
         // resolve input
         this.resolveInput(reqInit);
         // resolve reqInit
-        const resolveReqInit = this.resolveReqInit(reqInit);
+        var resolveReqInit = this.resolveReqInit(reqInit);
         // resolve timeout auto abort
         this.resolveTimeoutAutoAbort(resolveReqInit);
         // handle request/response interceptors
         return this.handleInterceptors(resolveReqInit);
-    }
-    resolveInput(reqInit) {
-        let url = path_join(this._base || reqInit?.base, reqInit.input);
-        if (reqInit?.method?.toUpperCase() === "GET" /* GET */ && reqInit?.data) {
-            const qIndex = url.indexOf("?");
-            const path = qIndex < 0 ? url : url.slice(0, url.indexOf("?"));
-            const search = qIndex < 0
-                ? resolve_search_params("", reqInit?.data)
-                : resolve_search_params(url.slice(url.indexOf("?")), reqInit?.data);
-            url = path + (search ? `?${search}` : "");
+    };
+    Agent.prototype.resolveInput = function (reqInit) {
+        var _a;
+        var url = path_join(this._base || (reqInit === null || reqInit === void 0 ? void 0 : reqInit.base), reqInit.input);
+        if (((_a = reqInit === null || reqInit === void 0 ? void 0 : reqInit.method) === null || _a === void 0 ? void 0 : _a.toUpperCase()) === "GET" /* GET */ && (reqInit === null || reqInit === void 0 ? void 0 : reqInit.data)) {
+            var qIndex = url.indexOf("?");
+            var path = qIndex < 0 ? url : url.slice(0, url.indexOf("?"));
+            var search = qIndex < 0
+                ? resolve_search_params("", reqInit === null || reqInit === void 0 ? void 0 : reqInit.data)
+                : resolve_search_params(url.slice(url.indexOf("?")), reqInit === null || reqInit === void 0 ? void 0 : reqInit.data);
+            url = path + (search ? "?".concat(search) : "");
         }
         reqInit.url = url;
-    }
-    resolveReqInit(reqInit) {
-        const defaultReqInit = {
+    };
+    Agent.prototype.resolveReqInit = function (reqInit) {
+        var defaultReqInit = {
             timeout: 20000,
             responseType: "json" /* JSON */,
             method: "GET" /* GET */,
             credentials: "include",
         };
-        const resolveReqInit = {
-            ...this._dafaultInit,
-            ...defaultReqInit,
-            ...this._init,
-            ...reqInit,
-        };
+        var resolveReqInit = __assign(__assign(__assign(__assign({}, this._dafaultInit), defaultReqInit), this._init), reqInit);
         if (!resolveReqInit.method)
             resolveReqInit.method = "GET" /* GET */;
         resolveReqInit.method = resolveReqInit.method.toUpperCase();
@@ -203,17 +228,11 @@ class Agent {
             resolveReqInit.contentType = "json" /* JSON */;
         if (!resolveReqInit.responseType)
             resolveReqInit.responseType = "json" /* JSON */;
-        const reqContentType = resolveReqInit?.contentType &&
-            ContentTypeMap[resolveReqInit?.contentType];
+        var reqContentType = (resolveReqInit === null || resolveReqInit === void 0 ? void 0 : resolveReqInit.contentType) &&
+            ContentTypeMap[resolveReqInit === null || resolveReqInit === void 0 ? void 0 : resolveReqInit.contentType];
         // add some usual headers
-        const h = {
-            ...(reqContentType ? { "Content-Type": reqContentType } : null),
-        };
-        resolveReqInit.headers = {
-            ...defaultReqInit?.headers,
-            ...h,
-            ...resolveReqInit.headers,
-        };
+        var h = __assign({}, (reqContentType ? { "Content-Type": reqContentType } : null));
+        resolveReqInit.headers = __assign(__assign(__assign({}, defaultReqInit === null || defaultReqInit === void 0 ? void 0 : defaultReqInit.headers), h), resolveReqInit.headers);
         if (resolveReqInit.method === "GET" /* GET */ ||
             resolveReqInit.method === "HEAD" /* HEAD */) {
             resolveReqInit.body = undefined;
@@ -222,63 +241,65 @@ class Agent {
             resolveReqInit.body =
                 resolveReqInit.body !== null && resolveReqInit.body !== undefined
                     ? resolveReqInit.body
-                    : new BodyParser(resolveReqInit?.contentType).marshal(resolveReqInit.data);
+                    : new BodyParser(resolveReqInit === null || resolveReqInit === void 0 ? void 0 : resolveReqInit.contentType).marshal(resolveReqInit.data);
         }
         return resolveReqInit;
-    }
-    resolveTimeoutAutoAbort(reqInit) {
+    };
+    Agent.prototype.resolveTimeoutAutoAbort = function (reqInit) {
         // resolve timeout
-        let controller;
-        const timeout = reqInit?.timeout;
-        const includeAbort = timeout || (reqInit?.includeAbort !== false && reqInit?.includeAbort);
-        if (includeAbort && !reqInit?.signal) {
+        var controller;
+        var timeout = reqInit === null || reqInit === void 0 ? void 0 : reqInit.timeout;
+        var includeAbort = timeout || ((reqInit === null || reqInit === void 0 ? void 0 : reqInit.includeAbort) !== false && (reqInit === null || reqInit === void 0 ? void 0 : reqInit.includeAbort));
+        if (includeAbort && !(reqInit === null || reqInit === void 0 ? void 0 : reqInit.signal)) {
             controller = new AbortController();
             this._abortController = controller;
             reqInit.signal = controller.signal;
         }
         if (timeout && controller) {
-            this._timer = setTimeout(() => {
-                controller?.abort();
+            this._timer = setTimeout(function () {
+                controller === null || controller === void 0 ? void 0 : controller.abort();
             }, timeout);
         }
-    }
-    clearAutoAbortTimeout() {
+    };
+    Agent.prototype.clearAutoAbortTimeout = function () {
         if (this._timer) {
             window.clearTimeout(this._timer);
             this._timer = null;
         }
-    }
-    handleInterceptors(reqInit) {
-        const requestInterceptorChain = [];
-        let synchronousRequestInterceptors = true;
-        this._interceptors.request.forEach((interceptor) => {
-            const { runWhen, onFulfilled, onRejected } = interceptor;
+    };
+    Agent.prototype.handleInterceptors = function (reqInit) {
+        var requestInterceptorChain = [];
+        var synchronousRequestInterceptors = true;
+        this._interceptors.request.forEach(function (interceptor) {
+            var runWhen = interceptor.runWhen, onFulfilled = interceptor.onFulfilled, onRejected = interceptor.onRejected;
             if (typeof runWhen === "function" && runWhen(reqInit) === false)
                 return;
             synchronousRequestInterceptors =
                 synchronousRequestInterceptors && interceptor.synchronous;
             requestInterceptorChain.unshift(onFulfilled, onRejected);
         });
-        const responseInterceptorChain = [];
-        this._interceptors.response.forEach((interceptor) => responseInterceptorChain.unshift(interceptor.onFulfilled, interceptor.onRejected));
-        let promiseChain;
+        var responseInterceptorChain = [];
+        this._interceptors.response.forEach(function (interceptor) {
+            return responseInterceptorChain.unshift(interceptor.onFulfilled, interceptor.onRejected);
+        });
+        var promiseChain;
         if (!synchronousRequestInterceptors) {
-            let chain = [this.dispatchFetch, undefined];
+            var chain = [this.dispatchFetch, undefined];
             Array.prototype.unshift.apply(chain, requestInterceptorChain);
             chain = chain.concat(responseInterceptorChain);
             promiseChain = Promise.resolve(reqInit);
             while (chain.length) {
-                const onFulfilled = chain.shift();
-                const onRejected = chain.shift();
+                var onFulfilled = chain.shift();
+                var onRejected = chain.shift();
                 if (onFulfilled)
                     promiseChain = promiseChain.then(onFulfilled, onRejected);
             }
             return promiseChain;
         }
-        let chainReqInit = reqInit;
+        var chainReqInit = reqInit;
         while (requestInterceptorChain.length) {
-            const onFulfilled = requestInterceptorChain.shift();
-            const onRejected = requestInterceptorChain.shift();
+            var onFulfilled = requestInterceptorChain.shift();
+            var onRejected = requestInterceptorChain.shift();
             try {
                 if (onFulfilled)
                     chainReqInit = onFulfilled(chainReqInit);
@@ -289,28 +310,29 @@ class Agent {
                 break;
             }
         }
-        let responsePromiseChain = this.dispatchFetch(reqInit);
+        var responsePromiseChain = this.dispatchFetch(reqInit);
         while (responseInterceptorChain.length) {
-            const onFulfilled = responseInterceptorChain.shift();
-            const onRejected = responseInterceptorChain.shift();
+            var onFulfilled = responseInterceptorChain.shift();
+            var onRejected = responseInterceptorChain.shift();
             if (onFulfilled)
                 responsePromiseChain = responsePromiseChain.then(onFulfilled, onRejected);
         }
         return responsePromiseChain;
-    }
-    dispatchFetch(reqInit) {
+    };
+    Agent.prototype.dispatchFetch = function (reqInit) {
+        var _this = this;
         // eslint-disable-next-line @typescript-eslint/no-this-alias
-        const __self = this;
-        let __res__;
-        const url = reqInit.url || reqInit.input;
+        var __self = this;
+        var __res__;
+        var url = reqInit.url || reqInit.input;
         // this wil be never reached!
         if (!url) {
             return Promise.reject(new Error("Unexpected error: url must have a value and be a string, but null!"));
         }
         return originFetch(url, reqInit)
-            .then((res) => {
+            .then(function (res) {
             __res__ = res;
-            const responseType = reqInit?.responseType || get_response_type(res);
+            var responseType = (reqInit === null || reqInit === void 0 ? void 0 : reqInit.responseType) || get_response_type(res);
             if (responseType === "json" /* JSON */)
                 return res.json();
             if (responseType === "buffer" /* BUFFER */)
@@ -324,7 +346,7 @@ class Agent {
                 return res.formData();
             return res.json();
         })
-            .then((data) => {
+            .then(function (data) {
             return {
                 url: __res__.url,
                 data: data,
@@ -337,14 +359,15 @@ class Agent {
                 __response__: __res__,
             };
         })
-            .catch((e) => {
-            this.clearAutoAbortTimeout();
+            .catch(function (e) {
+            _this.clearAutoAbortTimeout();
             throw e;
         });
-    }
-}
-const get_response_type = (res) => {
-    const contentType = res.headers.get("content-type");
+    };
+    return Agent;
+}());
+var get_response_type = function (res) {
+    var contentType = res.headers.get("content-type");
     if (!contentType)
         return "text" /* TEXT */;
     if (contentType.includes("application/json"))
@@ -357,13 +380,17 @@ const get_response_type = (res) => {
         return "text" /* TEXT */;
     return "json" /* JSON */;
 };
-const path_join = (...paths) => {
-    const non_pre_reg = /(?<!(https?|file|wss?):)\/\/+/;
-    const pre_reg = /^(https?|file|wss?):\/\//;
+var path_join = function () {
+    var paths = [];
+    for (var _i = 0; _i < arguments.length; _i++) {
+        paths[_i] = arguments[_i];
+    }
+    var non_pre_reg = /(?<!(https?|file|wss?):)\/\/+/;
+    var pre_reg = /^(https?|file|wss?):\/\//;
     return paths
         .filter(Boolean)
         .map(String)
-        .reduce((pre, path) => {
+        .reduce(function (pre, path) {
         if (new RegExp(pre_reg).test(path)) {
             return path;
         }
@@ -372,10 +399,10 @@ const path_join = (...paths) => {
         .replace(new RegExp(non_pre_reg, "gm"), "/");
 };
 function resolve_search_params(search, data) {
-    const q = new URLSearchParams(search);
-    const b = new BodyParser("form").marshal(data);
-    const q2 = new URLSearchParams("?" + b);
-    q2.forEach((value, key) => {
+    var q = new URLSearchParams(search);
+    var b = new BodyParser("form").marshal(data);
+    var q2 = new URLSearchParams("?" + b);
+    q2.forEach(function (value, key) {
         if (value !== undefined && value !== null)
             q.append(key, value);
     });

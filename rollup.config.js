@@ -6,17 +6,6 @@ export default [
   {
     input: './src/index.ts', 
     plugins: [rollupTypescript({
-      tsconfig: './tsconfig.cjs.json'
-    })],
-    output: {
-      dir: './lib',
-      format: "cjs",
-      exports: 'auto'
-    }
-  },
-  {
-    input: './src/index.ts', 
-    plugins: [rollupTypescript({
       tsconfig: './tsconfig.esm.json'
     })],
     output: {
@@ -30,7 +19,7 @@ export default [
       tsconfig: './tsconfig.umd.json'
     })],
     output: {
-      dir: './umd',
+      dir: './lib',
       format: "umd",
       name: 'Agent',
       exports: "named"
