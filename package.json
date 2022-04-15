@@ -2,8 +2,12 @@
   "name": "agentfetch",
   "version": "0.1.1",
   "description": "request agent base on fetch",
-  "main": "/lib/index.js",
-  "module": "esmodule",
+  "source": "src/index.ts",
+  "main": "lib/index.js",
+  "module": "esm/index.js",
+  "umd": "umd/index.js",
+  "types": "lib/index.d.ts",
+  "typings": "lib/index.d.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "rm -rf ./lib && rm -rf ./esm && rm -rf ./umd && rollup -c ./rollup.config.js"

@@ -21,7 +21,7 @@ export default [
     })],
     output: {
       dir: './esm',
-      format: "es"
+      format: "es",
     }
   },
   {
