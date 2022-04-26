@@ -1,6 +1,6 @@
 {
   "name": "agentch",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "request agent base on fetch",
   "source": "src/index.ts",
   "main": "lib/index.js",
