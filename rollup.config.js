@@ -7,7 +7,7 @@ const cwd = (pathname) => path.resolve(process.cwd(), pathname)
 
 export default [
   {
-    input: cwd('./src/index.ts'), 
+    input: cwd('./index.ts'), 
     plugins: [rollupTypescript({
       tsconfig: cwd('./tsconfig.esm.json')
     }), terser()],
@@ -17,7 +17,7 @@ export default [
     }
   },
   {
-    input: cwd('./src/index.ts'), 
+    input: cwd('./index.ts'), 
     plugins: [rollupTypescript({
       tsconfig: cwd('./tsconfig.esm.es6.json')
     }), terser()],
@@ -27,7 +27,7 @@ export default [
     }
   },
   {
-    input: cwd('./src/index.ts'), 
+    input: cwd('./index.ts'), 
     plugins: [rollupTypescript({
       tsconfig: cwd('./tsconfig.umd.json')
     }), terser()],
@@ -39,7 +39,7 @@ export default [
     }
   },
   {
-    input: cwd('./src/index.ts'), 
+    input: cwd('./index.ts'), 
     plugins: [rollupTypescript({
       tsconfig: cwd('./tsconfig.umd.es6.json')
     }), terser()],

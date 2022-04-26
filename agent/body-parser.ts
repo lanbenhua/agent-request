@@ -1,4 +1,4 @@
-import { stringify } from "../utils/json";
+import { stringify } from "./utils/json";
 import { ContentType, SupportedContentType } from "./agent";
 
 class BodyParser {

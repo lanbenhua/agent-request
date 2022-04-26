@@ -9,7 +9,7 @@
     "ts",
     "typescript"
   ],
-  "source": "src/index.ts",
+  "source": "index.ts",
   "main": "lib/index.js",
   "module": "esm/index.js",
   "umd": "lib/index.js",
