@@ -87,7 +87,7 @@ class Agent {
     includeAbort: true,
   };
 
-  protected _timer?: number | null;
+  protected _timer?: NodeJS.Timeout | null;
 
   protected _abortController?: AbortController;
 
@@ -274,7 +274,7 @@ class Agent {
         | undefined
         | ((reqInit: AgentReqInit<U>) => Promise<AgentResponse<T, U>>)
         | OnFulfilled<AgentResponse<T, U>>
-      )[] = [this.dispatchFetch, undefined];
+      )[] = [this.dispatchFetch.bind(this), undefined];
 
       Array.prototype.unshift.apply(chain, requestInterceptorChain);
       chain = chain.concat(responseInterceptorChain);

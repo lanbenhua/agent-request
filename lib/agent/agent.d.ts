@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import InterceptorManager from "./interceptor-manager";
 export declare type SupportedContentType = "json" | "form" | "text" | "buffer" | "blob" | "formdata";
 export declare const enum ContentType {
@@ -45,7 +46,7 @@ declare class Agent {
     protected _base?: string;
     protected _init?: AgentInit;
     private _dafaultInit?;
-    protected _timer?: number | null;
+    protected _timer?: NodeJS.Timeout | null;
     protected _abortController?: AbortController;
     protected _interceptors: {
         request: InterceptorManager<AgentReqInit<any>>;
