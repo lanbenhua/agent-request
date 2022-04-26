@@ -201,6 +201,7 @@ var Agent = /** @class */ (function () {
     Agent.prototype.resolveInput = function (reqInit) {
         var _a;
         var url = path_join(this._base || (reqInit === null || reqInit === void 0 ? void 0 : reqInit.base), reqInit.input);
+        // If the method is GET, we should merge the data of reqInit and url search
         if (((_a = reqInit === null || reqInit === void 0 ? void 0 : reqInit.method) === null || _a === void 0 ? void 0 : _a.toUpperCase()) === "GET" /* GET */ && (reqInit === null || reqInit === void 0 ? void 0 : reqInit.data)) {
             var qIndex = url.indexOf("?");
             var path = qIndex < 0 ? url : url.slice(0, url.indexOf("?"));
@@ -209,6 +210,7 @@ var Agent = /** @class */ (function () {
                 : resolve_search_params(url.slice(url.indexOf("?")), reqInit === null || reqInit === void 0 ? void 0 : reqInit.data);
             url = path + (search ? "?".concat(search) : "");
         }
+        // update url after resolved
         reqInit.url = url;
     };
     Agent.prototype.resolveReqInit = function (reqInit) {
@@ -219,18 +221,23 @@ var Agent = /** @class */ (function () {
             credentials: "include",
         };
         var resolveReqInit = __assign(__assign(__assign(__assign({}, this._dafaultInit), defaultReqInit), this._init), reqInit);
+        // default method is GET if none
+        // transform to upper case
         if (!resolveReqInit.method)
             resolveReqInit.method = "GET" /* GET */;
         resolveReqInit.method = resolveReqInit.method.toUpperCase();
+        // default credentials is include if none
         if (!resolveReqInit.credentials)
-            resolveReqInit.method = "include";
+            resolveReqInit.credentials = "include";
+        // if no contentType set and method is not GET, will set default `json`
         if (!resolveReqInit.contentType && resolveReqInit.method !== "GET" /* GET */)
             resolveReqInit.contentType = "json" /* JSON */;
+        // if no responseType set, will set default `json`
         if (!resolveReqInit.responseType)
             resolveReqInit.responseType = "json" /* JSON */;
+        // add some usual headers
         var reqContentType = (resolveReqInit === null || resolveReqInit === void 0 ? void 0 : resolveReqInit.contentType) &&
             ContentTypeMap[resolveReqInit === null || resolveReqInit === void 0 ? void 0 : resolveReqInit.contentType];
-        // add some usual headers
         var h = __assign({}, (reqContentType ? { "Content-Type": reqContentType } : null));
         resolveReqInit.headers = __assign(__assign(__assign({}, defaultReqInit === null || defaultReqInit === void 0 ? void 0 : defaultReqInit.headers), h), resolveReqInit.headers);
         if (resolveReqInit.method === "GET" /* GET */ ||
@@ -320,7 +327,6 @@ var Agent = /** @class */ (function () {
         return responsePromiseChain;
     };
     Agent.prototype.dispatchFetch = function (reqInit) {
-        var _this = this;
         // eslint-disable-next-line @typescript-eslint/no-this-alias
         var __self = this;
         var __res__;
@@ -360,7 +366,7 @@ var Agent = /** @class */ (function () {
             };
         })
             .catch(function (e) {
-            _this.clearAutoAbortTimeout();
+            __self.clearAutoAbortTimeout();
             throw e;
         });
     };

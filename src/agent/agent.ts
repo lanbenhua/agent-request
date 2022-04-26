@@ -31,7 +31,7 @@ export const enum ContentType {
  * text/plain
  * application/json
  */
-const ContentTypeMap: Record<string, string> = {
+const ContentTypeMap: Record<string, string | undefined | null> = {
   json: "application/json; charset=utf-8",
   form: "application/x-www-form-urlencoded; charset=utf-8",
   formdata: undefined,
