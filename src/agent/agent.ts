@@ -31,7 +31,7 @@ export const enum ContentType {
  * text/plain
  * application/json
  */
-const ContentTypeMap = {
+const ContentTypeMap: Record<string, string> = {
   json: "application/json; charset=utf-8",
   form: "application/x-www-form-urlencoded; charset=utf-8",
   formdata: undefined,
@@ -114,6 +114,7 @@ class Agent {
   public request<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>> {
     // resolve input
     this.resolveInput<U>(reqInit);
+
     // resolve reqInit
     const resolveReqInit = this.resolveReqInit<U>(reqInit);
 
@@ -126,6 +127,8 @@ class Agent {
 
   protected resolveInput<U>(reqInit: AgentReqInit<U>) {
     let url = path_join(this._base || reqInit?.base, reqInit.input);
+
+    // If the method is GET, we should merge the data of reqInit and url search
     if (reqInit?.method?.toUpperCase() === Method.GET && reqInit?.data) {
       const qIndex = url.indexOf("?");
       const path = qIndex < 0 ? url : url.slice(0, url.indexOf("?"));
@@ -136,6 +139,8 @@ class Agent {
 
       url = path + (search ? `?${search}` : "");
     }
+
+    // update url after resolved
     reqInit.url = url;
   }
 
@@ -154,22 +159,31 @@ class Agent {
       ...reqInit,
     };
 
+    // default method is GET if none
+    // transform to upper case
     if (!resolveReqInit.method) resolveReqInit.method = Method.GET;
     resolveReqInit.method = resolveReqInit.method.toUpperCase();
-    if (!resolveReqInit.credentials) resolveReqInit.method = "include";
+
+    // default credentials is include if none
+    if (!resolveReqInit.credentials) resolveReqInit.credentials = "include";
+
+    // if no contentType set and method is not GET, will set default `json`
     if (!resolveReqInit.contentType && resolveReqInit.method !== Method.GET)
       resolveReqInit.contentType = ContentType.JSON;
+
+    // if no responseType set, will set default `json`
     if (!resolveReqInit.responseType)
       resolveReqInit.responseType = ContentType.JSON;
 
+    // add some usual headers
     const reqContentType =
       resolveReqInit?.contentType &&
       ContentTypeMap[resolveReqInit?.contentType];
 
-    // add some usual headers
     const h: RequestInit["headers"] = {
       ...(reqContentType ? { "Content-Type": reqContentType } : null),
     };
+
     resolveReqInit.headers = {
       ...defaultReqInit?.headers,
       ...h,
@@ -359,7 +373,7 @@ class Agent {
         };
       })
       .catch((e) => {
-        this.clearAutoAbortTimeout();
+        __self.clearAutoAbortTimeout();
 
         throw e;
       });
