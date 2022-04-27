@@ -29,7 +29,6 @@ export declare type AgentReqInit<U> = RequestInit & AgentInit & {
     data?: U;
     contentType?: ContentType | SupportedContentType;
     responseType?: ContentType | SupportedContentType;
-    skipErrorNotification?: boolean;
 };
 export interface AgentResponse<T, U> {
     url: string;
@@ -38,8 +37,8 @@ export interface AgentResponse<T, U> {
     status: number;
     statusText: string;
     headers: Response["headers"];
-    __reqInit__: AgentReqInit<U> | undefined;
-    __fetch__: Agent;
+    __init__: AgentReqInit<U> | undefined;
+    __agent__: Agent;
     __response__: Response;
 }
 declare class Agent {

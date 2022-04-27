@@ -63,7 +63,6 @@ export type AgentReqInit<U> = RequestInit &
     data?: U;
     contentType?: ContentType | SupportedContentType;
     responseType?: ContentType | SupportedContentType;
-    skipErrorNotification?: boolean;
   };
 
 export interface AgentResponse<T, U> {
@@ -73,8 +72,8 @@ export interface AgentResponse<T, U> {
   status: number;
   statusText: string;
   headers: Response["headers"];
-  __reqInit__: AgentReqInit<U> | undefined;
-  __fetch__: Agent;
+  __init__: AgentReqInit<U> | undefined;
+  __agent__: Agent;
   __response__: Response;
 }
 
@@ -367,8 +366,8 @@ class Agent {
           status: __res__.status,
           statusText: __res__.statusText,
           headers: __res__.headers,
-          __reqInit__: reqInit,
-          __fetch__: __self,
+          __init__: reqInit,
+          __agent__: __self,
           __response__: __res__,
         };
       })
