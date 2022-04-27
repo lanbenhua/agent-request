@@ -221,7 +221,7 @@ class Agent {
 
     if (timeout && controller) {
       this._timer = setTimeout(() => {
-        controller?.abort();
+        controller?.abort("Timeout of exceeded");
       }, timeout);
     }
   }
