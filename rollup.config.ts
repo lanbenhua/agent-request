@@ -1,33 +1,35 @@
+import { RollupOptions } from "rollup";
+
 // rollup.config.js (building more than one bundle)
 const path = require('path');
 const rollupTypescript = require('@rollup/plugin-typescript');
 const terser = require("rollup-plugin-terser").terser;
 
-const cwd = (pathname) => path.resolve(process.cwd(), pathname)
+const cwd = (pathname: string): string => path.resolve(process.cwd(), pathname)
 
-export default [
+const config: RollupOptions[] = [
   {
-    input: cwd('./index.ts'), 
+    input: cwd('./src/index.ts'), 
     plugins: [rollupTypescript({
       tsconfig: cwd('./tsconfig.esm.json')
     }), terser()],
     output: {
       dir: cwd('./esm'),
-      format: "es",
+      format: "es"
     }
   },
   {
-    input: cwd('./index.ts'), 
+    input: cwd('./src/index.ts'), 
     plugins: [rollupTypescript({
       tsconfig: cwd('./tsconfig.esm.es6.json')
-    }), terser()],
+    })],
     output: {
       format: "es",
       file: cwd('./esm/es6.js')
     }
   },
   {
-    input: cwd('./index.ts'), 
+    input: cwd('./src/index.ts'), 
     plugins: [rollupTypescript({
       tsconfig: cwd('./tsconfig.umd.json')
     }), terser()],
@@ -39,10 +41,10 @@ export default [
     }
   },
   {
-    input: cwd('./index.ts'), 
+    input: cwd('./src/index.ts'), 
     plugins: [rollupTypescript({
       tsconfig: cwd('./tsconfig.umd.es6.json')
-    }), terser()],
+    })],
     output: {
       format: "umd",
       name: 'Agent',
@@ -51,3 +53,5 @@ export default [
     }
   }
 ];
+
+export default config;

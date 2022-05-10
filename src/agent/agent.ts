@@ -1,29 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-
 import BodyParser from "./body-parser";
 import InterceptorManager, {
   OnFulfilled,
   OnRejected,
 } from "./interceptor-manager";
+import {Method, SupportedContentType, ContentType} from './type'
 
+// TODO: make polyfill to support more platform
 const originFetch = window.fetch;
-
-export type SupportedContentType =
-  | "json"
-  | "form"
-  | "text"
-  | "buffer"
-  | "blob"
-  | "formdata";
-
-export const enum ContentType {
-  JSON = "json",
-  FORM = "form",
-  FORMDATA = "formdata",
-  TEXT = "text",
-  BUFFER = "buffer",
-  BLOB = "blob",
-}
 
 /**
  * application/x-www-form-urlencoded
@@ -40,19 +24,8 @@ const ContentTypeMap: Record<string, string | undefined | null> = {
   blob: undefined,
 };
 
-export const enum Method {
-  GET = "GET",
-  POST = "POST",
-  PUT = "PUT",
-  DELETE = "DELETE",
-  PATCH = "PATCH",
-  HEAD = "HEAD",
-  OPTIONS = "OPTIONS",
-}
-
 export type AgentInit = {
   timeout?: number;
-  includeAbort?: boolean;
 };
 
 export type AgentReqInit<U> = RequestInit &
@@ -77,14 +50,16 @@ export interface AgentResponse<T, U> {
   __response__: Response;
 }
 
+const DEFAULT_AGENT_INIT: AgentInit = {
+  timeout: 20000,
+}
+// @ts-ignore
+const DEFAULT_REQ_INIT: Partial<AgentReqInit<any>> = {
+};
+
 class Agent {
   protected _base?: string;
   protected _init?: AgentInit;
-
-  private _dafaultInit?: AgentInit = {
-    timeout: 20000,
-    includeAbort: true,
-  };
 
   protected _timer?: NodeJS.Timeout | null;
 
@@ -99,9 +74,13 @@ class Agent {
     return this._interceptors;
   }
 
+  public get init() {
+    return this._init;
+  }
+
   constructor(base?: string, init?: AgentInit) {
     this._base = base;
-    this._init = init;
+    this._init = {...DEFAULT_AGENT_INIT, ...init};
   }
 
   // eslint-disable-next-line
@@ -144,75 +123,56 @@ class Agent {
   }
 
   protected resolveReqInit<U>(reqInit: AgentReqInit<U>): AgentReqInit<U> {
-    const defaultReqInit: Partial<AgentReqInit<U>> = {
-      timeout: 20000,
-      responseType: ContentType.JSON,
-      method: Method.GET,
-      credentials: "include",
-    };
-
-    const resolveReqInit: AgentReqInit<U> = {
-      ...this._dafaultInit,
-      ...defaultReqInit,
+    const resolvedReqInit: AgentReqInit<U> = {
       ...this._init,
+      ...DEFAULT_REQ_INIT,
       ...reqInit,
     };
 
     // default method is GET if none
     // transform to upper case
-    if (!resolveReqInit.method) resolveReqInit.method = Method.GET;
-    resolveReqInit.method = resolveReqInit.method.toUpperCase();
-
-    // default credentials is include if none
-    if (!resolveReqInit.credentials) resolveReqInit.credentials = "include";
-
-    // if no contentType set and method is not GET, will set default `json`
-    if (!resolveReqInit.contentType && resolveReqInit.method !== Method.GET)
-      resolveReqInit.contentType = ContentType.JSON;
-
-    // if no responseType set, will set default `json`
-    if (!resolveReqInit.responseType)
-      resolveReqInit.responseType = ContentType.JSON;
+    if (!resolvedReqInit.method) resolvedReqInit.method = Method.GET;
+    resolvedReqInit.method = resolvedReqInit.method.toUpperCase();
 
     // add some usual headers
     const reqContentType =
-      resolveReqInit?.contentType &&
-      ContentTypeMap[resolveReqInit?.contentType];
+      resolvedReqInit?.contentType &&
+      ContentTypeMap[resolvedReqInit?.contentType];
 
     const h: RequestInit["headers"] = {
       ...(reqContentType ? { "Content-Type": reqContentType } : null),
     };
 
-    resolveReqInit.headers = {
-      ...defaultReqInit?.headers,
+    resolvedReqInit.headers = {
+      ...DEFAULT_REQ_INIT.headers,
       ...h,
-      ...resolveReqInit.headers,
+      ...resolvedReqInit.headers,
     };
 
     if (
-      resolveReqInit.method === Method.GET ||
-      resolveReqInit.method === Method.HEAD
+      resolvedReqInit.method === Method.GET ||
+      resolvedReqInit.method === Method.HEAD
     ) {
-      resolveReqInit.body = undefined;
+      resolvedReqInit.body = undefined;
     } else {
-      resolveReqInit.body =
-        resolveReqInit.body !== null && resolveReqInit.body !== undefined
-          ? resolveReqInit.body
-          : new BodyParser(resolveReqInit?.contentType).marshal(
-              resolveReqInit.data
+      resolvedReqInit.body =
+        resolvedReqInit.body !== undefined && resolvedReqInit.body !== null
+          ? resolvedReqInit.body
+          : new BodyParser(resolvedReqInit?.contentType).marshal(
+              resolvedReqInit.data
             );
     }
 
-    return resolveReqInit;
+    return resolvedReqInit;
   }
 
   protected resolveTimeoutAutoAbort<U>(reqInit: AgentReqInit<U>) {
     // resolve timeout
     let controller: AbortController | undefined;
     const timeout = reqInit?.timeout;
-    const includeAbort =
-      timeout || (reqInit?.includeAbort !== false && reqInit?.includeAbort);
-    if (includeAbort && !reqInit?.signal) {
+    // const includeAbort =
+    //   timeout || (reqInit?.includeAbort !== false && reqInit?.includeAbort);
+    if (timeout && !reqInit?.signal) {
       controller = new AbortController();
       this._abortController = controller;
       reqInit.signal = controller.signal;
@@ -335,7 +295,7 @@ class Agent {
     if (!url) {
       return Promise.reject(
         new Error(
-          "Unexpected error: url must have a value and be a string, but null!"
+          "Agent: unexpected error, url must have a value and be a string, but null!"
         )
       );
     }
@@ -345,6 +305,7 @@ class Agent {
         __res__ = res;
 
         const responseType = reqInit?.responseType || get_response_type(res);
+        if (!responseType) throw new Error("Agent: except a response type but null")
 
         if (responseType === ContentType.JSON) return res.json();
         if (responseType === ContentType.BUFFER) return res.arrayBuffer();
@@ -359,17 +320,7 @@ class Agent {
         return res.json();
       })
       .then((data) => {
-        return {
-          url: __res__.url,
-          data: data,
-          ok: __res__.ok,
-          status: __res__.status,
-          statusText: __res__.statusText,
-          headers: __res__.headers,
-          __init__: reqInit,
-          __agent__: __self,
-          __response__: __res__,
-        };
+        return this.decorateResponse<T, U>(reqInit, __res__, data);
       })
       .catch((e) => {
         __self.clearAutoAbortTimeout();
@@ -377,16 +328,33 @@ class Agent {
         throw e;
       });
   }
+
+  private decorateResponse<T, U>(init: AgentReqInit<U>, res: Response, data: T): AgentResponse<T, U> {
+    return  {
+      url: res.url,
+      data: data,
+      ok: res.ok,
+      status: res.status,
+      statusText: res.statusText,
+      headers: res.headers,
+      __init__: init,
+      __agent__: this,
+      __response__: res,
+    }
+  }
 }
 
-const get_response_type = (res: Response): ContentType => {
+const get_response_type = (res: Response): ContentType | undefined | null => {
   const contentType = res.headers.get("content-type");
-  if (!contentType) return ContentType.TEXT;
-  if (contentType.includes("application/json")) return ContentType.JSON;
-  if (contentType.includes("text/plain")) return ContentType.TEXT;
-  if (contentType.includes("text/html")) return ContentType.TEXT;
-  if (contentType.includes("application/xml")) return ContentType.TEXT;
-  return ContentType.JSON;
+
+  if (!contentType) return null;
+  
+  if (contentType?.includes("application/json")) return ContentType.JSON;
+  if (contentType?.includes("text/plain")) return ContentType.TEXT;
+  if (contentType?.includes("text/html")) return ContentType.TEXT;
+  if (contentType?.includes("application/xml")) return ContentType.TEXT;
+  
+  return undefined
 };
 
 const path_join = (...paths: (string | null | undefined)[]): string => {
@@ -406,7 +374,7 @@ const path_join = (...paths: (string | null | undefined)[]): string => {
 
 function resolve_search_params(search?: string, data?: unknown): string {
   const q = new URLSearchParams(search);
-  const b = new BodyParser("form").marshal(data);
+  const b = new BodyParser(ContentType.FORM).marshal(data);
   const q2 = new URLSearchParams("?" + b);
 
   q2.forEach((value, key) => {

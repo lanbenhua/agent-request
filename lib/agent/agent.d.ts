@@ -1,26 +1,8 @@
 /// <reference types="node" />
 import InterceptorManager from "./interceptor-manager";
-export declare type SupportedContentType = "json" | "form" | "text" | "buffer" | "blob" | "formdata";
-export declare const enum ContentType {
-    JSON = "json",
-    FORM = "form",
-    FORMDATA = "formdata",
-    TEXT = "text",
-    BUFFER = "buffer",
-    BLOB = "blob"
-}
-export declare const enum Method {
-    GET = "GET",
-    POST = "POST",
-    PUT = "PUT",
-    DELETE = "DELETE",
-    PATCH = "PATCH",
-    HEAD = "HEAD",
-    OPTIONS = "OPTIONS"
-}
+import { SupportedContentType, ContentType } from './type';
 export declare type AgentInit = {
     timeout?: number;
-    includeAbort?: boolean;
 };
 export declare type AgentReqInit<U> = RequestInit & AgentInit & {
     input: string;
@@ -44,7 +26,6 @@ export interface AgentResponse<T, U> {
 declare class Agent {
     protected _base?: string;
     protected _init?: AgentInit;
-    private _dafaultInit?;
     protected _timer?: NodeJS.Timeout | null;
     protected _abortController?: AbortController;
     protected _interceptors: {
@@ -55,6 +36,7 @@ declare class Agent {
         request: InterceptorManager<AgentReqInit<any>>;
         response: InterceptorManager<AgentResponse<any, any>>;
     };
+    get init(): AgentInit | undefined;
     constructor(base?: string, init?: AgentInit);
     abort(reason?: any): void;
     request<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>>;
@@ -64,5 +46,6 @@ declare class Agent {
     protected clearAutoAbortTimeout(): void;
     protected handleInterceptors<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>>;
     protected dispatchFetch<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>>;
+    private decorateResponse;
 }
 export default Agent;
