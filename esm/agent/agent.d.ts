@@ -1,14 +1,19 @@
-/// <reference types="node" />
 import InterceptorManager from "./interceptor-manager";
 import { SupportedContentType, ContentType } from './type';
+import Queue from './queue';
 export declare type AgentInit = {
     timeout?: number;
+    queue?: {
+        size: number;
+    };
 };
-export declare type AgentReqInit<U> = RequestInit & AgentInit & {
+export declare type AgentReqInit<U> = RequestInit & {
     input: string;
     url?: string;
     base?: string;
     data?: U;
+    timeout?: number;
+    abortId?: string;
     contentType?: ContentType | SupportedContentType;
     responseType?: ContentType | SupportedContentType;
 };
@@ -24,28 +29,28 @@ export interface AgentResponse<T, U> {
     __response__: Response;
 }
 declare class Agent {
-    protected _base?: string;
-    protected _init?: AgentInit;
-    protected _timer?: NodeJS.Timeout | null;
-    protected _abortController?: AbortController;
-    protected _interceptors: {
-        request: InterceptorManager<AgentReqInit<any>>;
-        response: InterceptorManager<AgentResponse<any, any>>;
-    };
+    private _base?;
+    private _init?;
+    private _queue?;
+    private _abortors;
+    private _interceptors;
+    get init(): AgentInit | undefined;
+    get base(): string | undefined;
+    get queue(): Queue | undefined;
     get interceptors(): {
         request: InterceptorManager<AgentReqInit<any>>;
         response: InterceptorManager<AgentResponse<any, any>>;
     };
-    get init(): AgentInit | undefined;
     constructor(base?: string, init?: AgentInit);
-    abort(reason?: any): void;
+    abort(id: string, reason?: string): void;
     request<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>>;
-    protected resolveInput<U>(reqInit: AgentReqInit<U>): void;
-    protected resolveReqInit<U>(reqInit: AgentReqInit<U>): AgentReqInit<U>;
-    protected resolveTimeoutAutoAbort<U>(reqInit: AgentReqInit<U>): void;
-    protected clearAutoAbortTimeout(): void;
-    protected handleInterceptors<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>>;
-    protected dispatchFetch<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>>;
+    _request<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>>;
+    private resolveInput;
+    private resolveReqInit;
+    private resolveTimeoutAutoAbort;
+    private _getAbortId;
+    private handleInterceptors;
+    private dispatchFetch;
     private decorateResponse;
 }
 export default Agent;

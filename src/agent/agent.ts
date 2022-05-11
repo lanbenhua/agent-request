@@ -1,20 +1,12 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+import InterceptorManager, { OnFulfilled, OnRejected } from "./interceptor-manager";
+import { Method, SupportedContentType, ContentType } from './type';
 import BodyParser from "./body-parser";
-import InterceptorManager, {
-  OnFulfilled,
-  OnRejected,
-} from "./interceptor-manager";
-import {Method, SupportedContentType, ContentType} from './type'
+import Queue from './queue';
+import AbortManager from "./abort-manager";
 
 // TODO: make polyfill to support more platform
-const originFetch = window.fetch;
+const _fetch = window.fetch;
 
-/**
- * application/x-www-form-urlencoded
- * multipart/form-data
- * text/plain
- * application/json
- */
 const ContentTypeMap: Record<string, string | undefined | null> = {
   json: "application/json; charset=utf-8",
   form: "application/x-www-form-urlencoded; charset=utf-8",
@@ -26,14 +18,19 @@ const ContentTypeMap: Record<string, string | undefined | null> = {
 
 export type AgentInit = {
   timeout?: number;
+  queue?: {
+    size: number;
+  }
 };
 
 export type AgentReqInit<U> = RequestInit &
-  AgentInit & {
+  {
     input: string;
     url?: string;
     base?: string;
     data?: U;
+    timeout?: number;
+    abortId?: string;
     contentType?: ContentType | SupportedContentType;
     responseType?: ContentType | SupportedContentType;
   };
@@ -51,45 +48,53 @@ export interface AgentResponse<T, U> {
 }
 
 const DEFAULT_AGENT_INIT: AgentInit = {
-  timeout: 20000,
+  timeout: 60000,
 }
 // @ts-ignore
 const DEFAULT_REQ_INIT: Partial<AgentReqInit<any>> = {
 };
 
 class Agent {
-  protected _base?: string;
-  protected _init?: AgentInit;
-
-  protected _timer?: NodeJS.Timeout | null;
-
-  protected _abortController?: AbortController;
-
-  protected _interceptors = {
+  private _base?: string;
+  private _init?: AgentInit;
+  private _queue?: Queue;
+  private _abortors: AbortManager = new AbortManager();
+  private _interceptors = {
     request: new InterceptorManager<AgentReqInit<any>>(),
     response: new InterceptorManager<AgentResponse<any, any>>(),
   };
 
+  public get init(): AgentInit | undefined {
+    return this._init;
+  }
+  public get base(): string | undefined {
+    return this._base;
+  }
+  public get queue(): Queue | undefined {
+    return this._queue;
+  }
   public get interceptors() {
     return this._interceptors;
-  }
-
-  public get init() {
-    return this._init;
   }
 
   constructor(base?: string, init?: AgentInit) {
     this._base = base;
     this._init = {...DEFAULT_AGENT_INIT, ...init};
+    if (init?.queue?.size)
+      this._queue = new Queue(init?.queue.size)
   }
 
-  // eslint-disable-next-line
-  public abort(reason?: any) {
-    // @ts-ignore
-    this._abortController?.abort(reason);
+  public abort(id: string, reason?: string) {
+    this._abortors.abort(id, reason);
   }
 
   public request<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>> {
+    if (this._queue)
+      return this._queue.run<AgentResponse<T, U>>(() => this._request(reqInit))
+    return this._request(reqInit)
+  }
+
+  public _request<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>> {
     // resolve input
     this.resolveInput<U>(reqInit);
 
@@ -103,7 +108,7 @@ class Agent {
     return this.handleInterceptors<T, U>(resolveReqInit);
   }
 
-  protected resolveInput<U>(reqInit: AgentReqInit<U>) {
+  private resolveInput<U>(reqInit: AgentReqInit<U>) {
     let url = path_join(this._base || reqInit?.base, reqInit.input);
 
     // If the method is GET, we should merge the data of reqInit and url search
@@ -122,77 +127,73 @@ class Agent {
     reqInit.url = url;
   }
 
-  protected resolveReqInit<U>(reqInit: AgentReqInit<U>): AgentReqInit<U> {
+  private resolveReqInit<U>(reqInit: AgentReqInit<U>): AgentReqInit<U> {
     const resolvedReqInit: AgentReqInit<U> = {
-      ...this._init,
       ...DEFAULT_REQ_INIT,
+      ...this._init,
       ...reqInit,
     };
 
-    // default method is GET if none
-    // transform to upper case
+    // set default method equals GET if none
+    // then transform to upper case
     if (!resolvedReqInit.method) resolvedReqInit.method = Method.GET;
     resolvedReqInit.method = resolvedReqInit.method.toUpperCase();
 
-    // add some usual headers
+    // handle content-type header according to the contentType
+    // if no contentType, will ignore
+    // else handle the responsible content type according to the ContentTypeMap
     const reqContentType =
       resolvedReqInit?.contentType &&
       ContentTypeMap[resolvedReqInit?.contentType];
-
     const h: RequestInit["headers"] = {
       ...(reqContentType ? { "Content-Type": reqContentType } : null),
     };
-
     resolvedReqInit.headers = {
       ...DEFAULT_REQ_INIT.headers,
       ...h,
       ...resolvedReqInit.headers,
     };
 
-    if (
-      resolvedReqInit.method === Method.GET ||
-      resolvedReqInit.method === Method.HEAD
-    ) {
-      resolvedReqInit.body = undefined;
-    } else {
-      resolvedReqInit.body =
-        resolvedReqInit.body !== undefined && resolvedReqInit.body !== null
-          ? resolvedReqInit.body
-          : new BodyParser(resolvedReqInit?.contentType).marshal(
-              resolvedReqInit.data
-            );
-    }
+    // if init includes body, will use it directly
+    // else handle the responsible body
+    resolvedReqInit.body = resolvedReqInit.method === Method.GET || resolvedReqInit.method === Method.HEAD 
+      ? undefined
+      : resolvedReqInit.body !== undefined && resolvedReqInit.body !== null 
+      ? resolvedReqInit.body
+      : new BodyParser(resolvedReqInit?.contentType).marshal(resolvedReqInit.data)
 
     return resolvedReqInit;
   }
 
-  protected resolveTimeoutAutoAbort<U>(reqInit: AgentReqInit<U>) {
-    // resolve timeout
-    let controller: AbortController | undefined;
-    const timeout = reqInit?.timeout;
-    // const includeAbort =
-    //   timeout || (reqInit?.includeAbort !== false && reqInit?.includeAbort);
-    if (timeout && !reqInit?.signal) {
-      controller = new AbortController();
-      this._abortController = controller;
-      reqInit.signal = controller.signal;
-    }
+  private resolveTimeoutAutoAbort<U>(reqInit: AgentReqInit<U>) {
+    const { timeout } = reqInit;
 
-    if (timeout && controller) {
-      this._timer = setTimeout(() => {
-        controller?.abort("Timeout of exceeded");
-      }, timeout);
-    }
+    // if no timeout or timeout equals 0, will return directly
+    if (!timeout) return;
+
+    // if the request init includes signal, the abort event will control by the outside
+    // we do not need to do the auto abort any more.
+    if (reqInit.signal) return;
+
+    const controller = new AbortController();
+
+    if (!reqInit.signal) reqInit.signal = controller.signal;
+
+    this._abortors.set(this._getAbortId(reqInit), controller);
+
+    const timer = setTimeout(() => {
+      controller.abort("Timeout of exceeded");
+ 
+      this._abortors.delete(this._getAbortId(reqInit))
+      clearTimeout(timer)
+    }, timeout);
   }
 
-  protected clearAutoAbortTimeout() {
-    if (this._timer) {
-      window.clearTimeout(this._timer);
-      this._timer = null;
-    }
+  private _getAbortId<U>(reqInit: AgentReqInit<U>): string {
+    return reqInit.abortId ?? (reqInit.method ?? '') + (reqInit.url ?? '');
   }
 
-  protected handleInterceptors<T, U>(
+  private handleInterceptors<T, U>(
     reqInit: AgentReqInit<U>
   ): Promise<AgentResponse<T, U>> {
     const requestInterceptorChain: (
@@ -282,16 +283,15 @@ class Agent {
     return responsePromiseChain;
   }
 
-  protected dispatchFetch<T, U>(
+  private dispatchFetch<T, U>(
     reqInit: AgentReqInit<U>
   ): Promise<AgentResponse<T, U>> {
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    const __self = this;
     let __res__: Response;
 
     const url = reqInit.url || reqInit.input;
 
-    // this wil be never reached!
+    // Actually this wil be never reached!
+    // if reached, must be an unexcepted error
     if (!url) {
       return Promise.reject(
         new Error(
@@ -300,7 +300,7 @@ class Agent {
       );
     }
 
-    return originFetch(url, reqInit)
+    return _fetch(url, reqInit)
       .then((res) => {
         __res__ = res;
 
@@ -311,22 +311,16 @@ class Agent {
         if (responseType === ContentType.BUFFER) return res.arrayBuffer();
         if (responseType === ContentType.TEXT) return res.text();
         if (responseType === ContentType.BLOB) return res.blob();
-        if (
-          responseType === ContentType.FORM ||
-          responseType === ContentType.FORMDATA
-        )
-          return res.formData();
+        if (responseType === ContentType.FORM || responseType === ContentType.FORMDATA) return res.formData();
 
         return res.json();
       })
       .then((data) => {
         return this.decorateResponse<T, U>(reqInit, __res__, data);
       })
-      .catch((e) => {
-        __self.clearAutoAbortTimeout();
-
-        throw e;
-      });
+      .finally(() => {
+        this._abortors.delete(this._getAbortId(reqInit))
+      })
   }
 
   private decorateResponse<T, U>(init: AgentReqInit<U>, res: Response, data: T): AgentResponse<T, U> {
@@ -348,7 +342,6 @@ const get_response_type = (res: Response): ContentType | undefined | null => {
   const contentType = res.headers.get("content-type");
 
   if (!contentType) return null;
-  
   if (contentType?.includes("application/json")) return ContentType.JSON;
   if (contentType?.includes("text/plain")) return ContentType.TEXT;
   if (contentType?.includes("text/html")) return ContentType.TEXT;
@@ -360,6 +353,7 @@ const get_response_type = (res: Response): ContentType | undefined | null => {
 const path_join = (...paths: (string | null | undefined)[]): string => {
   const non_pre_reg = /(?<!(https?|file|wss?):)\/\/+/;
   const pre_reg = /^(https?|file|wss?):\/\//;
+
   return paths
     .filter(Boolean)
     .map(String)

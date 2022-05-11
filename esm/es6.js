@@ -1,3 +1,31 @@
+class InterceptorManager {
+    constructor() {
+        this.handlers = [];
+        this.handlers = [];
+    }
+    use(onFulfilled, onRejected, options) {
+        this.handlers = this.handlers.concat({
+            onFulfilled: onFulfilled,
+            onRejected: onRejected,
+            synchronous: options ? options.synchronous : false,
+            runWhen: options ? options.runWhen : null,
+        });
+        return this.handlers.length - 1;
+    }
+    reject(id) {
+        if (this.handlers[id]) {
+            this.handlers[id] = null;
+        }
+    }
+    forEach(h) {
+        this.handlers.forEach((handler, index) => {
+            if (handler !== null) {
+                h(handler, index);
+            }
+        });
+    }
+}
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const stringify = (value, replacer, space) => {
     try {
@@ -140,43 +168,101 @@ function searchParamsStringify(obj) {
     return stringify(obj);
 }
 
-class InterceptorManager {
-    constructor() {
-        this.handlers = [];
-        this.handlers = [];
+class Queue {
+    constructor(size, options) {
+        this._size = 10;
+        this._queue = [];
+        this._pending = 0;
+        this._queue = [];
+        this._pending = 0;
+        this._options = options;
+        this.resize(size);
     }
-    use(onFulfilled, onRejected, options) {
-        this.handlers = this.handlers.concat({
-            onFulfilled: onFulfilled,
-            onRejected: onRejected,
-            synchronous: options ? options.synchronous : false,
-            runWhen: options ? options.runWhen : null,
-        });
-        return this.handlers.length - 1;
+    get size() {
+        return this._size;
     }
-    reject(id) {
-        if (this.handlers[id]) {
-            this.handlers[id] = null;
-        }
+    get queue() {
+        return this._queue;
     }
-    forEach(h) {
-        this.handlers.forEach((handler, index) => {
-            if (handler !== null) {
-                h(handler, index);
-            }
-        });
+    get options() {
+        return this._options;
+    }
+    get pending() {
+        return this._pending;
+    }
+    resize(size) {
+        this._size = size;
+        // Trigger queued items if queue became bigger
+        this._check();
+    }
+    run(runner) {
+        return new Promise((resolve) => this._push(resolve))
+            .then(runner)
+            .then(this._finish, this._error);
+    }
+    _check() {
+        if (this._pending >= this.size)
+            return;
+        if (this._queue.length < 1)
+            return;
+        this._pending++;
+        const task = this._queue.shift();
+        task && task(undefined);
+        // Flush all queued items until queue is full
+        this._check();
+    }
+    _push(runner) {
+        this._queue.push(runner);
+        this._check();
+    }
+    _pop() {
+        this._pending--;
+        if (this._pending < 0)
+            throw new Error('Pop called more than there were pending fetches');
+        this._check();
+    }
+    _finish(res) {
+        this._pop();
+        return res;
+    }
+    _error(err) {
+        this._pop();
+        throw err;
     }
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+class AbortManager {
+    constructor() {
+        this._d = new Map();
+    }
+    signal(id) {
+        var _a;
+        return (_a = this._d.get(id)) === null || _a === void 0 ? void 0 : _a.signal;
+    }
+    isAborted(id) {
+        var _a, _b;
+        return (_b = (_a = this.signal(id)) === null || _a === void 0 ? void 0 : _a.aborted) !== null && _b !== void 0 ? _b : true;
+    }
+    abort(id, reason) {
+        if (this.isAborted(id))
+            return;
+        const controller = this._d.get(id);
+        if (controller)
+            controller.abort(reason);
+    }
+    set(id, controller) {
+        this._d.set(id, controller);
+    }
+    delete(id) {
+        return this._d.delete(id);
+    }
+    clear() {
+        this._d.clear();
+    }
+}
+
 // TODO: make polyfill to support more platform
-const originFetch = window.fetch;
-/**
- * application/x-www-form-urlencoded
- * multipart/form-data
- * text/plain
- * application/json
- */
+const _fetch = window.fetch;
 const ContentTypeMap = {
     json: "application/json; charset=utf-8",
     form: "application/x-www-form-urlencoded; charset=utf-8",
@@ -186,32 +272,44 @@ const ContentTypeMap = {
     blob: undefined,
 };
 const DEFAULT_AGENT_INIT = {
-    timeout: 20000,
+    timeout: 60000,
 };
 // @ts-ignore
 const DEFAULT_REQ_INIT = {};
 class Agent {
     constructor(base, init) {
+        var _a;
+        this._abortors = new AbortManager();
         this._interceptors = {
             request: new InterceptorManager(),
             response: new InterceptorManager(),
         };
         this._base = base;
         this._init = Object.assign(Object.assign({}, DEFAULT_AGENT_INIT), init);
-    }
-    get interceptors() {
-        return this._interceptors;
+        if ((_a = init === null || init === void 0 ? void 0 : init.queue) === null || _a === void 0 ? void 0 : _a.size)
+            this._queue = new Queue(init === null || init === void 0 ? void 0 : init.queue.size);
     }
     get init() {
         return this._init;
     }
-    // eslint-disable-next-line
-    abort(reason) {
-        var _a;
-        // @ts-ignore
-        (_a = this._abortController) === null || _a === void 0 ? void 0 : _a.abort(reason);
+    get base() {
+        return this._base;
+    }
+    get queue() {
+        return this._queue;
+    }
+    get interceptors() {
+        return this._interceptors;
+    }
+    abort(id, reason) {
+        this._abortors.abort(id, reason);
     }
     request(reqInit) {
+        if (this._queue)
+            return this._queue.run(() => this._request(reqInit));
+        return this._request(reqInit);
+    }
+    _request(reqInit) {
         // resolve input
         this.resolveInput(reqInit);
         // resolve reqInit
@@ -237,51 +335,50 @@ class Agent {
         reqInit.url = url;
     }
     resolveReqInit(reqInit) {
-        const resolvedReqInit = Object.assign(Object.assign(Object.assign({}, this._init), DEFAULT_REQ_INIT), reqInit);
-        // default method is GET if none
-        // transform to upper case
+        const resolvedReqInit = Object.assign(Object.assign(Object.assign({}, DEFAULT_REQ_INIT), this._init), reqInit);
+        // set default method equals GET if none
+        // then transform to upper case
         if (!resolvedReqInit.method)
             resolvedReqInit.method = "GET" /* GET */;
         resolvedReqInit.method = resolvedReqInit.method.toUpperCase();
-        // add some usual headers
+        // handle content-type header according to the contentType
+        // if no contentType, will ignore
+        // else handle the responsible content type according to the ContentTypeMap
         const reqContentType = (resolvedReqInit === null || resolvedReqInit === void 0 ? void 0 : resolvedReqInit.contentType) &&
             ContentTypeMap[resolvedReqInit === null || resolvedReqInit === void 0 ? void 0 : resolvedReqInit.contentType];
         const h = Object.assign({}, (reqContentType ? { "Content-Type": reqContentType } : null));
         resolvedReqInit.headers = Object.assign(Object.assign(Object.assign({}, DEFAULT_REQ_INIT.headers), h), resolvedReqInit.headers);
-        if (resolvedReqInit.method === "GET" /* GET */ ||
-            resolvedReqInit.method === "HEAD" /* HEAD */) {
-            resolvedReqInit.body = undefined;
-        }
-        else {
-            resolvedReqInit.body =
-                resolvedReqInit.body !== undefined && resolvedReqInit.body !== null
-                    ? resolvedReqInit.body
-                    : new BodyParser(resolvedReqInit === null || resolvedReqInit === void 0 ? void 0 : resolvedReqInit.contentType).marshal(resolvedReqInit.data);
-        }
+        // if init includes body, will use it directly
+        // else handle the responsible body
+        resolvedReqInit.body = resolvedReqInit.method === "GET" /* GET */ || resolvedReqInit.method === "HEAD" /* HEAD */
+            ? undefined
+            : resolvedReqInit.body !== undefined && resolvedReqInit.body !== null
+                ? resolvedReqInit.body
+                : new BodyParser(resolvedReqInit === null || resolvedReqInit === void 0 ? void 0 : resolvedReqInit.contentType).marshal(resolvedReqInit.data);
         return resolvedReqInit;
     }
     resolveTimeoutAutoAbort(reqInit) {
-        // resolve timeout
-        let controller;
-        const timeout = reqInit === null || reqInit === void 0 ? void 0 : reqInit.timeout;
-        // const includeAbort =
-        //   timeout || (reqInit?.includeAbort !== false && reqInit?.includeAbort);
-        if (timeout && !(reqInit === null || reqInit === void 0 ? void 0 : reqInit.signal)) {
-            controller = new AbortController();
-            this._abortController = controller;
+        const { timeout } = reqInit;
+        // if no timeout or timeout equals 0, will return directly
+        if (!timeout)
+            return;
+        // if the request init includes signal, the abort event will control by the outside
+        // we do not need to do the auto abort any more.
+        if (reqInit.signal)
+            return;
+        const controller = new AbortController();
+        if (!reqInit.signal)
             reqInit.signal = controller.signal;
-        }
-        if (timeout && controller) {
-            this._timer = setTimeout(() => {
-                controller === null || controller === void 0 ? void 0 : controller.abort("Timeout of exceeded");
-            }, timeout);
-        }
+        this._abortors.set(this._getAbortId(reqInit), controller);
+        const timer = setTimeout(() => {
+            controller.abort("Timeout of exceeded");
+            this._abortors.delete(this._getAbortId(reqInit));
+            clearTimeout(timer);
+        }, timeout);
     }
-    clearAutoAbortTimeout() {
-        if (this._timer) {
-            window.clearTimeout(this._timer);
-            this._timer = null;
-        }
+    _getAbortId(reqInit) {
+        var _a, _b, _c;
+        return (_a = reqInit.abortId) !== null && _a !== void 0 ? _a : ((_b = reqInit.method) !== null && _b !== void 0 ? _b : '') + ((_c = reqInit.url) !== null && _c !== void 0 ? _c : '');
     }
     handleInterceptors(reqInit) {
         const requestInterceptorChain = [];
@@ -334,15 +431,14 @@ class Agent {
         return responsePromiseChain;
     }
     dispatchFetch(reqInit) {
-        // eslint-disable-next-line @typescript-eslint/no-this-alias
-        const __self = this;
         let __res__;
         const url = reqInit.url || reqInit.input;
-        // this wil be never reached!
+        // Actually this wil be never reached!
+        // if reached, must be an unexcepted error
         if (!url) {
             return Promise.reject(new Error("Agent: unexpected error, url must have a value and be a string, but null!"));
         }
-        return originFetch(url, reqInit)
+        return _fetch(url, reqInit)
             .then((res) => {
             __res__ = res;
             const responseType = (reqInit === null || reqInit === void 0 ? void 0 : reqInit.responseType) || get_response_type(res);
@@ -356,17 +452,15 @@ class Agent {
                 return res.text();
             if (responseType === "blob" /* BLOB */)
                 return res.blob();
-            if (responseType === "form" /* FORM */ ||
-                responseType === "formdata" /* FORMDATA */)
+            if (responseType === "form" /* FORM */ || responseType === "formdata" /* FORMDATA */)
                 return res.formData();
             return res.json();
         })
             .then((data) => {
             return this.decorateResponse(reqInit, __res__, data);
         })
-            .catch((e) => {
-            __self.clearAutoAbortTimeout();
-            throw e;
+            .finally(() => {
+            this._abortors.delete(this._getAbortId(reqInit));
         });
     }
     decorateResponse(init, res, data) {
