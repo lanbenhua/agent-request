@@ -53,7 +53,7 @@ class Queue {
   public push<T>(task: QueueTask<T>): boolean {
     const { kill, runner } = task;
     new Promise<T>((resolve, reject) => {
-      const kill2 = () => {
+      const kill2 = kill && (() => {
         const killed = kill();
         if (killed) {
           reject();
@@ -61,7 +61,7 @@ class Queue {
         }
 
         return false;
-      }
+      })
       const runner2 = () => {
         this._pending++;
 
@@ -117,7 +117,7 @@ class Queue {
     if (priority === 'LOW') priority = -1e4;
     if (priority === 'LOWEST') priority = Number.MIN_SAFE_INTEGER;
 
-    return priority;
+    return priority as number;
   }
 
   protected _compare(priorityA?: QueueTaskPriority | null, priorityB?: QueueTaskPriority | null): number {
