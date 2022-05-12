@@ -1,25 +1,22 @@
+import { QueueOptions, QueueItem, QueueTask, QueuePromise } from './type';
+import Priority from './priority';
+import { CustomCancelError } from './error';
 
-
-export type Runner<T> = () => T | Promise<T> ;
-export type Kill = () => boolean;
-export type QueueTaskPriority = number | 'HIGHEST' | 'HIGH' | 'MEDIUM' | 'LOW' | 'LOWEST';
-export type QueueTask<T> = {
-  runner: Runner<T>;
-  kill?: Kill | null;
-  priority?: QueueTaskPriority | null;
+const DEFAULT_QUEUE_OPTIONS: QueueOptions = {
+  auto: true
 }
-export type QueueOptions = {}
 
 class Queue {
   private _options?: QueueOptions;
   private _pending: number = 0;
-  private _concurrency: number = 100;
-  private _queue: QueueTask<any>[] = [];
+  private _concurrency: number = 10;
+  private _queue: QueueItem<any>[] = [];
+  private _isPaused: boolean = false;
 
   constructor(concurrency: number, options?: QueueOptions) {
     this._queue = [];
     this._pending = 0;
-    this._options = options;
+    this._options = {...DEFAULT_QUEUE_OPTIONS, ...options};
 
     this._resolve = this._resolve.bind(this)
     this._reject = this._reject.bind(this)
@@ -43,92 +40,88 @@ class Queue {
     return this._pending;
   }
 
+  public get isPaused(): boolean {
+    return this._isPaused;
+  }
+
+  public pause() {
+    this._isPaused = true;
+  }
+
+  public resume() {
+    this._isPaused = false;
+
+    if (this._options?.auto) {
+      this._check();
+    }
+  }
+
   public reconcurrency(concurrency: number) {
     this._concurrency = concurrency;
 
-    // // Trigger queued items if queue became bigger
-    // this._check();
+    if (this._options?.auto) {
+      // Trigger queued items if queue became bigger
+      this._check();    
+    }
   }
 
-  public push<T>(task: QueueTask<T>): boolean {
-    const { kill, runner } = task;
-    new Promise<T>((resolve, reject) => {
-      const kill2 = kill && (() => {
-        const killed = kill();
-        if (killed) {
-          reject();
-          return true;
-        }
+  public enqueue<T = unknown>(task: QueueTask<T>): QueuePromise<T> {
+    const { runner } = task;
 
-        return false;
-      })
-      const runner2 = () => {
-        this._pending++;
-
-        const result = runner();
-        if (isPromise(result)) {
-          return (result as Promise<T>).then(res => {
-            resolve(res)
-            return res;
-          }, err => {
-            reject(err);
-            throw err;
-          })
-        }
-        resolve(result)
-        return result;
-      }
-
-      this._push<T>({
+    let queueItem: QueueItem<T>;
+    const promise: QueuePromise<T> = new Promise<T>((resolve, reject) => {
+      queueItem = {
         ...task,
-        kill: kill2,
-        runner: runner2,
-      })
+        runner,
+        resolve,
+        reject
+      };
+      this._push<T>(queueItem);
     })
     .then(this._resolve, this._reject)
 
-    // always return true
-    // In the future, we maybe add maxinum size of queue to reject some task, that will return false 
-    return true;
+    promise.cancel = () => { this._cancel<T>(queueItem) }
+
+    return promise;
   }
 
-  public pop<T>(): QueueTask<T> | undefined {
-    if (!this._check()) return undefined
-
-    const task = this._queue.shift();
-    return task
+  public dequeue<T = unknown>() {
+    this._check<T>();
   }
 
-  protected _check(): boolean {
+  protected _check<T>() {
     if (this._pending >= this.size)
-      return false;
+      return;
 
     if (this._queue.length < 1)
-      return false;
+      return;
 
-    return true
+    this._run<T>();
+
+    // Flush all queued items until queue is full
+    this._check();
   }
 
-  protected _priority(priority?: QueueTaskPriority | null): number {
-    if (isNil(priority)) return 0;
-    if (priority === 'HIGHEST') priority = Number.MAX_SAFE_INTEGER;
-    if (priority === 'HIGH') priority = 1e4;
-    if (priority === 'MEDIUM') priority = 0;
-    if (priority === 'LOW') priority = -1e4;
-    if (priority === 'LOWEST') priority = Number.MIN_SAFE_INTEGER;
-
-    return priority as number;
+  protected _cancel<T>(task: QueueItem<T>) {
+    const { reject } = task;
+    reject(new CustomCancelError("Canceled", 'QueueCancelError'))
   }
 
-  protected _compare(priorityA?: QueueTaskPriority | null, priorityB?: QueueTaskPriority | null): number {
-    priorityA = this._priority(priorityA)
-    priorityB = this._priority(priorityB)
+  protected _run<T>() {
+    const task: QueueItem<T> | undefined | null = this._queue.shift();
+    if (!task) return;
 
-    return priorityB-priorityA
+    this._pending++;
+
+    const { runner, resolve, reject } = task;
+
+    runner().then(resolve, reject);
   }
- 
-  protected _push<T>(task: QueueTask<T>) {
-    this._queue = this._queue.concat(task).sort((a, b) => this._compare(a.priority, b.priority));
+
+  protected _push<T>(task: QueueItem<T>) {
+    this._queue = this._queue.concat(task).sort((a, b) => new Priority(b.priority).num() - new Priority(a.priority).num())
+
+    this._check();
   }
 
   protected _pop() {
@@ -136,6 +129,8 @@ class Queue {
 
     if (this._pending < 0)
       throw new Error('Pop called more than there were pending fetches');
+
+    this._check();
   }
 
   protected _resolve(res: any): any {
@@ -150,12 +145,3 @@ class Queue {
 }
 
 export default Queue
-
-function isNil(target: any): boolean {
-  return target === null || target === undefined;
-}
-
-function isPromise(target: any): boolean {
-  if (target && target.then && typeof target.then === 'function') return true;
-  return false;
-}

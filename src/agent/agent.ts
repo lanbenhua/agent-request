@@ -1,8 +1,8 @@
 import InterceptorManager, { OnFulfilled, OnRejected } from "./interceptor-manager";
 import { Method, SupportedContentType, ContentType } from './type';
-import BodyParser from "./body-parser";
-import Queue from './queue';
 import AbortManager from "./abort-manager";
+import BodyParser from "./body-parser";
+import Queue from '../queue';
 
 // TODO: make polyfill to support more platform
 const _fetch = window.fetch;
@@ -19,10 +19,11 @@ const ContentTypeMap: Record<string, string | undefined | null> = {
 export type AgentInit = {
   timeout?: number;
   queue?: {
-    size: number;
+    concurrency?: number;
+    defaultQueueName?: string;
+    concurrencies?: Record<string, number>;
   }
 };
-
 export type AgentReqInit<U> = RequestInit &
   {
     input: string;
@@ -31,10 +32,10 @@ export type AgentReqInit<U> = RequestInit &
     data?: U;
     timeout?: number;
     abortId?: string;
+    queueName?: string;
     contentType?: ContentType | SupportedContentType;
     responseType?: ContentType | SupportedContentType;
   };
-
 export interface AgentResponse<T, U> {
   url: string;
   data: T | undefined;
@@ -50,14 +51,14 @@ export interface AgentResponse<T, U> {
 const DEFAULT_AGENT_INIT: AgentInit = {
   timeout: 60000,
 }
-// @ts-ignore
 const DEFAULT_REQ_INIT: Partial<AgentReqInit<any>> = {
 };
+const DEFAULT_QUEUE_NAME = 'default';
 
 class Agent {
   private _base?: string;
   private _init?: AgentInit;
-  private _queue?: Queue;
+  private _queues?: Map<string, Queue>;
   private _abortors: AbortManager = new AbortManager();
   private _interceptors = {
     request: new InterceptorManager<AgentReqInit<any>>(),
@@ -70,8 +71,8 @@ class Agent {
   public get base(): string | undefined {
     return this._base;
   }
-  public get queue(): Queue | undefined {
-    return this._queue;
+  public get queues(): Map<string, Queue> | undefined {
+    return this._queues;
   }
   public get interceptors() {
     return this._interceptors;
@@ -80,10 +81,31 @@ class Agent {
   constructor(base?: string, init?: AgentInit) {
     this._base = base;
     this._init = {...DEFAULT_AGENT_INIT, ...init};
-    if (init?.queue?.size)
-      this._queue = new Queue(init?.queue.size)
+
+    this._initQueues();
 
     this._request = this._request.bind(this);
+  }
+
+  public queue(name: string): Queue | undefined {
+    return this._queues?.get(name);
+  }
+
+  private _initQueues() {
+    if (!this._init) return;
+    if (!this._init.queue) return;
+    const { queue } = this._init;
+    const { concurrency, defaultQueueName, concurrencies } = queue;
+    if (concurrency || defaultQueueName || concurrencies) {
+      const map = new Map<string, Queue>();
+      if (defaultQueueName) map.set(defaultQueueName || DEFAULT_QUEUE_NAME, new Queue(concurrency ?? 5));
+      if (concurrencies) {
+        Object.entries(concurrencies).map(([name, concurrency]) => {
+          map.set(name, new Queue(concurrency));
+        })
+      }
+      this._queues = map; 
+    }
   }
 
   public abort(id: string, reason?: string) {
@@ -91,26 +113,32 @@ class Agent {
   }
 
   public request<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>> {
-    if (this._queue)
-      return this._queue.run<AgentResponse<T, U>>(() => this._request(reqInit))
+    if (this._queues) {
+      const queue = this.queue(reqInit.queueName ?? this._init?.queue?.defaultQueueName ?? DEFAULT_QUEUE_NAME);
+      if (queue)
+        return queue.enqueue<AgentResponse<T, U>>({
+          runner: () => this._request(reqInit),
+          priority: "MEDIUM",
+        })
+    }
     return this._request(reqInit)
   }
 
   private _request<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>> {
     // resolve input
-    this.resolveInput<U>(reqInit);
+    this._resolveInput<U>(reqInit);
 
     // resolve reqInit
-    const resolveReqInit = this.resolveReqInit<U>(reqInit);
+    const resolveReqInit = this._resolveReqInit<U>(reqInit);
 
     // resolve timeout auto abort
-    this.resolveTimeoutAutoAbort<U>(resolveReqInit);
+    this._resolveTimeoutAutoAbort<U>(resolveReqInit);
 
     // handle request/response interceptors
-    return this.handleInterceptors<T, U>(resolveReqInit);
+    return this._handleInterceptors<T, U>(resolveReqInit);
   }
 
-  private resolveInput<U>(reqInit: AgentReqInit<U>) {
+  private _resolveInput<U>(reqInit: AgentReqInit<U>) {
     let url = path_join(this._base || reqInit?.base, reqInit.input);
 
     // If the method is GET, we should merge the data of reqInit and url search
@@ -129,7 +157,7 @@ class Agent {
     reqInit.url = url;
   }
 
-  private resolveReqInit<U>(reqInit: AgentReqInit<U>): AgentReqInit<U> {
+  private _resolveReqInit<U>(reqInit: AgentReqInit<U>): AgentReqInit<U> {
     const resolvedReqInit: AgentReqInit<U> = {
       ...DEFAULT_REQ_INIT,
       ...this._init,
@@ -167,7 +195,7 @@ class Agent {
     return resolvedReqInit;
   }
 
-  private resolveTimeoutAutoAbort<U>(reqInit: AgentReqInit<U>) {
+  private _resolveTimeoutAutoAbort<U>(reqInit: AgentReqInit<U>) {
     const { timeout } = reqInit;
 
     // if no timeout or timeout equals 0, will return directly
@@ -195,7 +223,7 @@ class Agent {
     return reqInit.abortId ?? (reqInit.method ?? '') + (reqInit.url ?? '');
   }
 
-  private handleInterceptors<T, U>(
+  private _handleInterceptors<T, U>(
     reqInit: AgentReqInit<U>
   ): Promise<AgentResponse<T, U>> {
     const requestInterceptorChain: (
@@ -236,7 +264,7 @@ class Agent {
         | undefined
         | ((reqInit: AgentReqInit<U>) => Promise<AgentResponse<T, U>>)
         | OnFulfilled<AgentResponse<T, U>>
-      )[] = [this.dispatchFetch.bind(this), undefined];
+      )[] = [this._dispatchFetch.bind(this), undefined];
 
       Array.prototype.unshift.apply(chain, requestInterceptorChain);
       chain = chain.concat(responseInterceptorChain);
@@ -268,7 +296,7 @@ class Agent {
     }
 
     let responsePromiseChain: Promise<AgentResponse<T, U>> =
-      this.dispatchFetch(reqInit);
+      this._dispatchFetch(reqInit);
 
     while (responseInterceptorChain.length) {
       const onFulfilled: OnFulfilled<AgentResponse<T, U>> | undefined =
@@ -285,7 +313,7 @@ class Agent {
     return responsePromiseChain;
   }
 
-  private dispatchFetch<T, U>(
+  private _dispatchFetch<T, U>(
     reqInit: AgentReqInit<U>
   ): Promise<AgentResponse<T, U>> {
     let __res__: Response;
@@ -318,14 +346,14 @@ class Agent {
         return res.json();
       })
       .then((data) => {
-        return this.decorateResponse<T, U>(reqInit, __res__, data);
+        return this._decorateResponse<T, U>(reqInit, __res__, data);
       })
       .finally(() => {
         this._abortors.delete(this._getAbortId(reqInit))
       })
   }
 
-  private decorateResponse<T, U>(init: AgentReqInit<U>, res: Response, data: T): AgentResponse<T, U> {
+  private _decorateResponse<T, U>(init: AgentReqInit<U>, res: Response, data: T): AgentResponse<T, U> {
     return  {
       url: res.url,
       data: data,
