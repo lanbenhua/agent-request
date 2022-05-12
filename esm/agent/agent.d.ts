@@ -44,7 +44,7 @@ declare class Agent {
     constructor(base?: string, init?: AgentInit);
     abort(id: string, reason?: string): void;
     request<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>>;
-    _request<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>>;
+    private _request;
     private resolveInput;
     private resolveReqInit;
     private resolveTimeoutAutoAbort;

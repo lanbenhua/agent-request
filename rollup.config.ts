@@ -18,16 +18,16 @@ const config: RollupOptions[] = [
       format: "es"
     }
   },
-  {
-    input: cwd('./src/index.ts'), 
-    plugins: [rollupTypescript({
-      tsconfig: cwd('./tsconfig.esm.es6.json')
-    })],
-    output: {
-      format: "es",
-      file: cwd('./esm/es6.js')
-    }
-  },
+  // {
+  //   input: cwd('./src/index.ts'), 
+  //   plugins: [rollupTypescript({
+  //     tsconfig: cwd('./tsconfig.esm.es6.json')
+  //   })],
+  //   output: {
+  //     format: "es",
+  //     file: cwd('./esm/es6.js')
+  //   }
+  // },
   {
     input: cwd('./src/index.ts'), 
     plugins: [rollupTypescript({
@@ -40,18 +40,18 @@ const config: RollupOptions[] = [
       exports: "named"
     }
   },
-  {
-    input: cwd('./src/index.ts'), 
-    plugins: [rollupTypescript({
-      tsconfig: cwd('./tsconfig.umd.es6.json')
-    })],
-    output: {
-      format: "umd",
-      name: 'Agent',
-      exports: "named",
-      file: cwd('./lib/es6.js')
-    }
-  }
+  // {
+  //   input: cwd('./src/index.ts'), 
+  //   plugins: [rollupTypescript({
+  //     tsconfig: cwd('./tsconfig.umd.es6.json')
+  //   })],
+  //   output: {
+  //     format: "umd",
+  //     name: 'Agent',
+  //     exports: "named",
+  //     file: cwd('./lib/es6.js')
+  //   }
+  // }
 ];
 
 export default config;
