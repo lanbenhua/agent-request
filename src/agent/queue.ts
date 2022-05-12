@@ -1,13 +1,13 @@
 
 
 export type Runner<T> = () => T | Promise<T> ;
-export type Task<T> = (value: T | PromiseLike<T>) => void;
+export type QueueTask<T> = (value: T | PromiseLike<T>) => void;
 export type QueueOptions = {}
 
 class Queue {
   private _size: number = 10;
   private _options?: QueueOptions;
-  private _queue: Task<any>[] = [];
+  private _queue: QueueTask<any>[] = [];
   private _pending: number = 0;
 
   constructor(size: number, options?: QueueOptions) {
@@ -25,7 +25,7 @@ class Queue {
     return this._size;
   }
 
-  public get queue(): Task<any>[]  {
+  public get queue(): QueueTask<any>[]  {
     return this._queue;
   }
 
@@ -65,8 +65,8 @@ class Queue {
     this._check();
   }
 
-  protected _push(runner: Task<any>) {
-    this._queue.push(runner);
+  protected _push(task: QueueTask<any>) {
+    this._queue.push(task);
     this._check();
   }
 
