@@ -82,6 +82,8 @@ class Agent {
     this._init = {...DEFAULT_AGENT_INIT, ...init};
     if (init?.queue?.size)
       this._queue = new Queue(init?.queue.size)
+
+    this._request = this._request.bind(this);
   }
 
   public abort(id: string, reason?: string) {
@@ -94,7 +96,7 @@ class Agent {
     return this._request(reqInit)
   }
 
-  public _request<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>> {
+  private _request<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>> {
     // resolve input
     this.resolveInput<U>(reqInit);
 

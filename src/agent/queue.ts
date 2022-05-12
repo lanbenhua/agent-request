@@ -15,6 +15,9 @@ class Queue {
     this._pending = 0;
     this._options = options;
 
+    this._finish = this._finish.bind(this)
+    this._error = this._error.bind(this)
+
     this.resize(size);
   }
 
@@ -43,7 +46,7 @@ class Queue {
 
   public run<T>(runner: Runner<T>): Promise<T> {
     return new Promise<number>((resolve) => this._push(resolve))
-      .then(runner)
+      .then(() => runner())
       .then(this._finish, this._error)
   }
 
