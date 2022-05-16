@@ -1,8 +1,8 @@
-import InterceptorManager, { OnFulfilled, OnRejected } from "./interceptor-manager";
 import { Method, SupportedContentType, ContentType } from './type';
-import AbortManager from "./abort-manager";
+import InterceptorManager, { OnFulfilled, OnRejected } from "./interceptor-manager";
+// import AbortManager from "./abort-manager";
 import BodyParser from "./body-parser";
-import Queue from '../queue';
+import Queue, { QueueTaskPriority } from '../queue';
 
 // TODO: make polyfill to support more platform
 const _fetch = window.fetch;
@@ -20,7 +20,7 @@ export type AgentInit = {
   timeout?: number;
   queue?: {
     concurrency?: number;
-    defaultQueueName?: string;
+    defaultName?: string;
     concurrencies?: Record<string, number>;
   }
 };
@@ -31,8 +31,11 @@ export type AgentReqInit<U> = RequestInit &
     base?: string;
     data?: U;
     timeout?: number;
-    abortId?: string;
-    queueName?: string;
+    abortController?: AbortController;
+    queue?: {
+      name?: string;
+      priority?: number | QueueTaskPriority;
+    };
     contentType?: ContentType | SupportedContentType;
     responseType?: ContentType | SupportedContentType;
   };
@@ -54,12 +57,14 @@ const DEFAULT_AGENT_INIT: AgentInit = {
 const DEFAULT_REQ_INIT: Partial<AgentReqInit<any>> = {
 };
 const DEFAULT_QUEUE_NAME = 'default';
+const DEFAULT_QUEUE_CONCURRENTCY = 5;
+const DEFAULT_QUEUE_PRIORITY = "MEDIUM";
 
 class Agent {
   private _base?: string;
   private _init?: AgentInit;
   private _queues?: Map<string, Queue>;
-  private _abortors: AbortManager = new AbortManager();
+  // private _abortors: AbortManager = new AbortManager();
   private _interceptors = {
     request: new InterceptorManager<AgentReqInit<any>>(),
     response: new InterceptorManager<AgentResponse<any, any>>(),
@@ -85,6 +90,7 @@ class Agent {
     this._initQueues();
 
     this._request = this._request.bind(this);
+    this._dispatchFetch = this._dispatchFetch.bind(this);
   }
 
   public queue(name: string): Queue | undefined {
@@ -95,32 +101,41 @@ class Agent {
     if (!this._init) return;
     if (!this._init.queue) return;
     const { queue } = this._init;
-    const { concurrency, defaultQueueName, concurrencies } = queue;
-    if (concurrency || defaultQueueName || concurrencies) {
-      const map = new Map<string, Queue>();
-      if (defaultQueueName) map.set(defaultQueueName || DEFAULT_QUEUE_NAME, new Queue(concurrency ?? 5));
-      if (concurrencies) {
-        Object.entries(concurrencies).map(([name, concurrency]) => {
-          map.set(name, new Queue(concurrency));
-        })
-      }
-      this._queues = map; 
+    const { concurrency, defaultName, concurrencies } = queue;
+    if (concurrency || defaultName) {
+      this._createOrGetQueue(defaultName, concurrency)
+    }
+    if (concurrencies) {
+      Object.entries(concurrencies).map(([name, concurrency]) => {
+        this._createOrGetQueue(name, concurrency)
+      })
     }
   }
 
-  public abort(id: string, reason?: string) {
-    this._abortors.abort(id, reason);
+  private _createOrGetQueue(name: string = DEFAULT_QUEUE_NAME, concurrency: number = DEFAULT_QUEUE_CONCURRENTCY): Queue {
+    if (!this._queues) this._queues = new Map<string, Queue>(); 
+    const oldQueue = this.queue(name);
+    if (oldQueue) return oldQueue;
+    const newQueue = new Queue(concurrency);
+    this._queues.set(name, newQueue);
+    return newQueue;
   }
+
+  // public abort(id: string, reason?: string) {
+  //   this._abortors.abort(id, reason);
+  // }
 
   public request<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>> {
     if (this._queues) {
-      const queue = this.queue(reqInit.queueName ?? this._init?.queue?.defaultQueueName ?? DEFAULT_QUEUE_NAME);
-      if (queue)
-        return queue.enqueue<AgentResponse<T, U>>({
-          runner: () => this._request(reqInit),
-          priority: "MEDIUM",
-        })
+      const queueName = reqInit.queue?.name ?? this._init?.queue?.defaultName ?? DEFAULT_QUEUE_NAME;
+      const queueConcurrency =  this._init?.queue?.concurrency ?? DEFAULT_QUEUE_CONCURRENTCY
+      const queue = this._createOrGetQueue(queueName, queueConcurrency)
+      return queue.enqueue<AgentResponse<T, U>>({
+        runner: () => this._request(reqInit),
+        priority: reqInit.queue?.priority ?? DEFAULT_QUEUE_PRIORITY,
+      })
     }
+   
     return this._request(reqInit)
   }
 
@@ -160,7 +175,7 @@ class Agent {
   private _resolveReqInit<U>(reqInit: AgentReqInit<U>): AgentReqInit<U> {
     const resolvedReqInit: AgentReqInit<U> = {
       ...DEFAULT_REQ_INIT,
-      ...this._init,
+      timeout: this._init?.timeout,
       ...reqInit,
     };
 
@@ -207,21 +222,28 @@ class Agent {
 
     const controller = new AbortController();
 
-    if (!reqInit.signal) reqInit.signal = controller.signal;
+    controller.signal.addEventListener('abort', (ev) => {
+      // @ts-ignore
+      console.log(`ev`, ev, controller.signal, controller.signal.aborted, controller.signal.reason)
+      // TODO: handle the abort error
+    })
 
-    this._abortors.set(this._getAbortId(reqInit), controller);
+    reqInit.abortController = controller;
+    reqInit.signal = controller.signal;
+   
+    // this._abortors.set(this._getAbortId(reqInit), controller);
 
     const timer = setTimeout(() => {
       controller.abort("Timeout of exceeded");
  
-      this._abortors.delete(this._getAbortId(reqInit))
+      // this._abortors.delete(this._getAbortId(reqInit))
       clearTimeout(timer)
     }, timeout);
   }
 
-  private _getAbortId<U>(reqInit: AgentReqInit<U>): string {
-    return reqInit.abortId ?? (reqInit.method ?? '') + (reqInit.url ?? '');
-  }
+  // private _getAbortId<U>(reqInit: AgentReqInit<U>): string {
+  //   return reqInit.abortId ?? (reqInit.method ?? '') + (reqInit.url ?? '');
+  // }
 
   private _handleInterceptors<T, U>(
     reqInit: AgentReqInit<U>
@@ -264,7 +286,7 @@ class Agent {
         | undefined
         | ((reqInit: AgentReqInit<U>) => Promise<AgentResponse<T, U>>)
         | OnFulfilled<AgentResponse<T, U>>
-      )[] = [this._dispatchFetch.bind(this), undefined];
+      )[] = [this._dispatchFetch, undefined];
 
       Array.prototype.unshift.apply(chain, requestInterceptorChain);
       chain = chain.concat(responseInterceptorChain);
@@ -296,7 +318,7 @@ class Agent {
     }
 
     let responsePromiseChain: Promise<AgentResponse<T, U>> =
-      this._dispatchFetch(reqInit);
+      this._dispatchFetch(chainReqInit);
 
     while (responseInterceptorChain.length) {
       const onFulfilled: OnFulfilled<AgentResponse<T, U>> | undefined =
@@ -334,8 +356,7 @@ class Agent {
       .then((res) => {
         __res__ = res;
 
-        const responseType = reqInit?.responseType || get_response_type(res);
-        if (!responseType) throw new Error("Agent: except a response type but null")
+        const responseType = this._checkResponseType(res, reqInit.responseType);
 
         if (responseType === ContentType.JSON) return res.json();
         if (responseType === ContentType.BUFFER) return res.arrayBuffer();
@@ -343,20 +364,29 @@ class Agent {
         if (responseType === ContentType.BLOB) return res.blob();
         if (responseType === ContentType.FORM || responseType === ContentType.FORMDATA) return res.formData();
 
-        return res.json();
+        throw new Error(`Agent: unexcepted response type '${responseType}'`)
       })
       .then((data) => {
         return this._decorateResponse<T, U>(reqInit, __res__, data);
       })
-      .finally(() => {
-        this._abortors.delete(this._getAbortId(reqInit))
-      })
+      // .finally(() => {
+      //   this._abortors.delete(this._getAbortId(reqInit))
+      // })
+  }
+
+  private _checkResponseType(res: Response, responseType: ContentType|SupportedContentType|undefined): ContentType|SupportedContentType|undefined {
+    const responseTypeFromResponse = get_response_type(res);
+    if (!responseType && !responseTypeFromResponse) throw new Error("Agent: except a response type but null")
+    if (responseTypeFromResponse && responseType && responseTypeFromResponse !== responseType) {
+      throw new Error(`Agent: except a '${responseType}' response type but '${responseTypeFromResponse}'`)
+    }
+    return responseType || responseTypeFromResponse;
   }
 
   private _decorateResponse<T, U>(init: AgentReqInit<U>, res: Response, data: T): AgentResponse<T, U> {
     return  {
-      url: res.url,
       data: data,
+      url: res.url,
       ok: res.ok,
       status: res.status,
       statusText: res.statusText,
@@ -368,10 +398,10 @@ class Agent {
   }
 }
 
-const get_response_type = (res: Response): ContentType | undefined | null => {
+const get_response_type = (res: Response): ContentType | undefined => {
   const contentType = res.headers.get("content-type");
 
-  if (!contentType) return null;
+  if (!contentType) return undefined;
   if (contentType?.includes("application/json")) return ContentType.JSON;
   if (contentType?.includes("text/plain")) return ContentType.TEXT;
   if (contentType?.includes("text/html")) return ContentType.TEXT;

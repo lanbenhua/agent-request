@@ -1,11 +1,11 @@
-import InterceptorManager from "./interceptor-manager";
 import { SupportedContentType, ContentType } from './type';
-import Queue from '../queue';
+import InterceptorManager from "./interceptor-manager";
+import Queue, { QueueTaskPriority } from '../queue';
 export declare type AgentInit = {
     timeout?: number;
     queue?: {
         concurrency?: number;
-        defaultQueueName?: string;
+        defaultName?: string;
         concurrencies?: Record<string, number>;
     };
 };
@@ -15,8 +15,11 @@ export declare type AgentReqInit<U> = RequestInit & {
     base?: string;
     data?: U;
     timeout?: number;
-    abortId?: string;
-    queueName?: string;
+    abortController?: AbortController;
+    queue?: {
+        name?: string;
+        priority?: number | QueueTaskPriority;
+    };
     contentType?: ContentType | SupportedContentType;
     responseType?: ContentType | SupportedContentType;
 };
@@ -35,7 +38,6 @@ declare class Agent {
     private _base?;
     private _init?;
     private _queues?;
-    private _abortors;
     private _interceptors;
     get init(): AgentInit | undefined;
     get base(): string | undefined;
@@ -47,15 +49,15 @@ declare class Agent {
     constructor(base?: string, init?: AgentInit);
     queue(name: string): Queue | undefined;
     private _initQueues;
-    abort(id: string, reason?: string): void;
+    private _createOrGetQueue;
     request<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>>;
     private _request;
     private _resolveInput;
     private _resolveReqInit;
     private _resolveTimeoutAutoAbort;
-    private _getAbortId;
     private _handleInterceptors;
     private _dispatchFetch;
+    private _checkResponseType;
     private _decorateResponse;
 }
 export default Agent;
