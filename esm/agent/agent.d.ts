@@ -2,6 +2,7 @@ import { SupportedContentType, ContentType } from './type';
 import InterceptorManager from "./interceptor-manager";
 import Queue, { QueueTaskPriority } from '../queue';
 export declare type AgentInit = {
+    base?: string;
     timeout?: number;
     queue?: {
         concurrency?: number;
@@ -35,18 +36,16 @@ export interface AgentResponse<T, U> {
     __response__: Response;
 }
 declare class Agent {
-    private _base?;
     private _init?;
     private _queues?;
     private _interceptors;
     get init(): AgentInit | undefined;
-    get base(): string | undefined;
     get queues(): Map<string, Queue> | undefined;
     get interceptors(): {
         request: InterceptorManager<AgentReqInit<any>>;
         response: InterceptorManager<AgentResponse<any, any>>;
     };
-    constructor(base?: string, init?: AgentInit);
+    constructor(init?: AgentInit);
     queue(name: string): Queue | undefined;
     private _initQueues;
     private _createOrGetQueue;
@@ -57,6 +56,7 @@ declare class Agent {
     private _resolveTimeoutAutoAbort;
     private _handleInterceptors;
     private _dispatchFetch;
+    private _clearTimeoutAutoAbort;
     private _checkResponseType;
     private _decorateResponse;
 }

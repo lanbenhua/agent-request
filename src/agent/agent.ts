@@ -4,9 +4,10 @@ import InterceptorManager, { OnFulfilled, OnRejected } from "./interceptor-manag
 import BodyParser from "./body-parser";
 import Queue, { QueueTaskPriority } from '../queue';
 import { TimeoutError } from './error';
+import { fetch as whatwgFetch } from 'whatwg-fetch/fetch';
 
 // TODO: make polyfill to support more platform
-const _fetch = window.fetch;
+const _fetch = self.fetch || whatwgFetch;
 
 const ContentTypeMap: Record<string, string | undefined | null> = {
   json: "application/json; charset=utf-8",

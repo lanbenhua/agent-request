@@ -1,4 +1,5 @@
 import { RollupOptions } from "rollup";
+import { nodeResolve } from '@rollup/plugin-node-resolve';
 
 // rollup.config.js (building more than one bundle)
 const path = require('path');
@@ -10,7 +11,7 @@ const cwd = (pathname: string): string => path.resolve(process.cwd(), pathname)
 const config: RollupOptions[] = [
   {
     input: cwd('./src/index.ts'), 
-    plugins: [rollupTypescript({
+    plugins: [nodeResolve(), rollupTypescript({
       tsconfig: cwd('./tsconfig.esm.json')
     }), terser()],
     output: {
@@ -20,7 +21,7 @@ const config: RollupOptions[] = [
   },
   // {
   //   input: cwd('./src/index.ts'), 
-  //   plugins: [rollupTypescript({
+  //   plugins: [nodeResolve(), rollupTypescript({
   //     tsconfig: cwd('./tsconfig.esm.es6.json')
   //   })],
   //   output: {
@@ -30,7 +31,7 @@ const config: RollupOptions[] = [
   // },
   {
     input: cwd('./src/index.ts'), 
-    plugins: [rollupTypescript({
+    plugins: [nodeResolve(), rollupTypescript({
       tsconfig: cwd('./tsconfig.umd.json')
     }), terser()],
     output: {
@@ -42,7 +43,7 @@ const config: RollupOptions[] = [
   },
   // {
   //   input: cwd('./src/index.ts'), 
-  //   plugins: [rollupTypescript({
+  //   plugins: [nodeResolve(), rollupTypescript({
   //     tsconfig: cwd('./tsconfig.umd.es6.json')
   //   })],
   //   output: {

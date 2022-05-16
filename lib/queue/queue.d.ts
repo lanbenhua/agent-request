@@ -1,10 +1,10 @@
 import { QueueOptions, QueueItem, QueueTask, QueuePromise } from './type';
 declare class Queue {
     private _options?;
+    private _isPaused;
     private _pending;
     private _concurrency;
     private _queue;
-    private _isPaused;
     constructor(concurrency: number, options?: QueueOptions);
     get size(): number;
     get concurrency(): number;
