@@ -8,10 +8,10 @@ const DEFAULT_QUEUE_OPTIONS: QueueOptions = {
 
 class Queue {
   private _options?: QueueOptions;
+  private _isPaused: boolean = false;
   private _pending: number = 0;
   private _concurrency: number = 10;
   private _queue: QueueItem<any>[] = [];
-  private _isPaused: boolean = false;
 
   constructor(concurrency: number, options?: QueueOptions) {
     this._queue = [];
@@ -90,11 +90,9 @@ class Queue {
   }
 
   protected _check<T>() {
-    if (this._pending >= this.size)
-      return;
-
-    if (this._queue.length < 1)
-      return;
+    if (this._isPaused) return;
+    if (this._pending >= this.size) return;
+    if (this._queue.length < 1) return;
 
     this._run<T>();
 
