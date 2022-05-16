@@ -3,6 +3,7 @@ import InterceptorManager, { OnFulfilled, OnRejected } from "./interceptor-manag
 // import AbortManager from "./abort-manager";
 import BodyParser from "./body-parser";
 import Queue, { QueueTaskPriority } from '../queue';
+import { TimeoutError } from './error';
 
 // TODO: make polyfill to support more platform
 const _fetch = window.fetch;
@@ -17,6 +18,7 @@ const ContentTypeMap: Record<string, string | undefined | null> = {
 };
 
 export type AgentInit = {
+  base?: string;
   timeout?: number;
   queue?: {
     concurrency?: number;
@@ -61,10 +63,8 @@ const DEFAULT_QUEUE_CONCURRENTCY = 5;
 const DEFAULT_QUEUE_PRIORITY = "MEDIUM";
 
 class Agent {
-  private _base?: string;
   private _init?: AgentInit;
   private _queues?: Map<string, Queue>;
-  // private _abortors: AbortManager = new AbortManager();
   private _interceptors = {
     request: new InterceptorManager<AgentReqInit<any>>(),
     response: new InterceptorManager<AgentResponse<any, any>>(),
@@ -73,9 +73,6 @@ class Agent {
   public get init(): AgentInit | undefined {
     return this._init;
   }
-  public get base(): string | undefined {
-    return this._base;
-  }
   public get queues(): Map<string, Queue> | undefined {
     return this._queues;
   }
@@ -83,8 +80,7 @@ class Agent {
     return this._interceptors;
   }
 
-  constructor(base?: string, init?: AgentInit) {
-    this._base = base;
+  constructor(init?: AgentInit) {
     this._init = {...DEFAULT_AGENT_INIT, ...init};
 
     this._initQueues();
@@ -121,10 +117,6 @@ class Agent {
     return newQueue;
   }
 
-  // public abort(id: string, reason?: string) {
-  //   this._abortors.abort(id, reason);
-  // }
-
   public request<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>> {
     if (this._queues) {
       const queueName = reqInit.queue?.name ?? this._init?.queue?.defaultName ?? DEFAULT_QUEUE_NAME;
@@ -154,7 +146,7 @@ class Agent {
   }
 
   private _resolveInput<U>(reqInit: AgentReqInit<U>) {
-    let url = path_join(this._base || reqInit?.base, reqInit.input);
+    let url = path_join(reqInit?.base ?? this._init?.base, reqInit.input);
 
     // If the method is GET, we should merge the data of reqInit and url search
     if (reqInit?.method?.toUpperCase() === Method.GET && reqInit?.data) {
@@ -222,28 +214,25 @@ class Agent {
 
     const controller = new AbortController();
 
-    controller.signal.addEventListener('abort', (ev) => {
+    controller.signal.onabort = function abortHandler(ev) {
+      console.log(`ev`, ev, this, ev.target, this.aborted, this.reason);
       // @ts-ignore
-      console.log(`ev`, ev, controller.signal, controller.signal.aborted, controller.signal.reason)
+      reqInit.aborter = this;
       // TODO: handle the abort error
-    })
+    }
 
     reqInit.abortController = controller;
     reqInit.signal = controller.signal;
-   
-    // this._abortors.set(this._getAbortId(reqInit), controller);
 
     const timer = setTimeout(() => {
       controller.abort("Timeout of exceeded");
  
-      // this._abortors.delete(this._getAbortId(reqInit))
-      clearTimeout(timer)
+      this._clearTimeoutAutoAbort(reqInit);
     }, timeout);
-  }
 
-  // private _getAbortId<U>(reqInit: AgentReqInit<U>): string {
-  //   return reqInit.abortId ?? (reqInit.method ?? '') + (reqInit.url ?? '');
-  // }
+    // @ts-ignore
+    reqInit.abortTimer = timer;
+  }
 
   private _handleInterceptors<T, U>(
     reqInit: AgentReqInit<U>
@@ -369,9 +358,31 @@ class Agent {
       .then((data) => {
         return this._decorateResponse<T, U>(reqInit, __res__, data);
       })
-      // .finally(() => {
-      //   this._abortors.delete(this._getAbortId(reqInit))
-      // })
+      .catch((err) => {
+        // @ts-ignore
+        const aborter: AbortSignal | undefined = reqInit.aborter
+        if (aborter) {
+          // @ts-ignore
+          delete reqInit.aborter
+          if (aborter.aborted)
+            throw new TimeoutError(aborter.reason ?? 'Timeout of exceeded', 'TimeoutError')
+        }
+        throw err;
+      })
+      .finally(() => {
+        // @ts-ignore
+        this._clearTimeoutAutoAbort(reqInit)
+      })
+  }
+
+  private _clearTimeoutAutoAbort<U>(reqInit: AgentReqInit<U>) {
+    // @ts-ignore
+    if (reqInit.abortTimer !== undefined && reqInit.abortTimer !== null) {
+      // @ts-ignore
+      clearTimeout(reqInit.abortTimer);
+       // @ts-ignore
+      delete reqInit.abortTimer;
+    }
   }
 
   private _checkResponseType(res: Response, responseType: ContentType|SupportedContentType|undefined): ContentType|SupportedContentType|undefined {
