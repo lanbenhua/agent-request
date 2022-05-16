@@ -7,7 +7,7 @@ import { TimeoutError } from './error';
 import { fetch as whatwgFetch } from 'whatwg-fetch/fetch';
 
 // TODO: make polyfill to support more platform
-const _fetch = self.fetch || whatwgFetch;
+const unfetch = self.fetch || whatwgFetch;
 
 const ContentTypeMap: Record<string, string | undefined | null> = {
   json: "application/json; charset=utf-8",
@@ -62,17 +62,9 @@ export interface AgentResponse<T, U> {
   __response__: Response;
 }
 
-const DEFAULT_AGENT_INIT: AgentInit = {
-  timeout: 60000,
-}
+const DEFAULT_AGENT_INIT: AgentInit = {}
 const DEFAULT_REQ_INIT: Partial<AgentReqInit<any, any>> = {
 };
-const DEFAULT_QUEUE_NAME = 'default';
-const DEFAULT_QUEUE_CONCURRENTCY = 5;
-const DEFAULT_QUEUE_PRIORITY = "MEDIUM";
-const DEFAULT_RETRY_MAXTIMES = 3;
-const DEFAULT_RETRY_DELAY = 1000;
-const DEFAULT_RETRY_RETRYON = [];
 
 class Agent {
   private _init?: AgentInit;
@@ -110,7 +102,7 @@ class Agent {
     if (!this._init.queue) return;
     const { queue } = this._init;
     const { concurrency, defaultName, concurrencies } = queue;
-    if (concurrency || defaultName) {
+    if (concurrency && defaultName) {
       this._createOrGetQueue(defaultName, concurrency)
     }
     if (concurrencies) {
@@ -120,7 +112,7 @@ class Agent {
     }
   }
 
-  private _createOrGetQueue(name: string = DEFAULT_QUEUE_NAME, concurrency: number = DEFAULT_QUEUE_CONCURRENTCY): Queue {
+  private _createOrGetQueue(name: string = 'default', concurrency: number = 5): Queue {
     if (!this._queues) this._queues = new Map<string, Queue>(); 
     const oldQueue = this.queue(name);
     if (oldQueue) return oldQueue;
@@ -131,12 +123,12 @@ class Agent {
 
   public request<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
     if (this._queues) {
-      const queueName = reqInit.queue?.name ?? this._init?.queue?.defaultName ?? DEFAULT_QUEUE_NAME;
-      const queueConcurrency =  this._init?.queue?.concurrency ?? DEFAULT_QUEUE_CONCURRENTCY
+      const queueName = reqInit.queue?.name ?? this._init?.queue?.defaultName;
+      const queueConcurrency =  this._init?.queue?.concurrency;
       const queue = this._createOrGetQueue(queueName, queueConcurrency)
       return queue.enqueue<AgentResponse<T, U>>({
         runner: () => this._request(reqInit),
-        priority: reqInit.queue?.priority ?? DEFAULT_QUEUE_PRIORITY,
+        priority: reqInit.queue?.priority,
       })
     }
    
@@ -344,20 +336,26 @@ class Agent {
   }
 
   private _wrappedFetch<T, U>(input: string, reqInit: AgentReqInit<T, U>): Promise<Response> {
-    const { retryMaxTimes, retryDelay, retryOn } = reqInit.retry || {};
+    const { 
+      retryOn,
+      retryMaxTimes = 3, 
+      retryDelay = 1000, 
+    } = reqInit.retry || {};
+
+    if (!retryOn) return unfetch(input, reqInit);
 
     return new Promise((resolve, reject) => {
       const wrappedFetch = (attempt: number) => {
-        _fetch(input, reqInit)
+        unfetch(input, reqInit)
           .then((response: Response) => {
             if (attempt >= retryMaxTimes) resolve(response);
             if (Array.isArray(retryOn) && retryOn.indexOf(response.status) === -1) {
               resolve(response);
             } else if (typeof retryOn === 'function') {
               try {
-                // eslint-disable-next-line no-undef
                 return Promise.resolve(retryOn(attempt, null, response))
                   .then((retryOnResponse) => {
+                    if (attempt >= retryMaxTimes) resolve(response);
                     if(retryOnResponse) {
                       retry(attempt, null, response);
                     } else {
@@ -374,8 +372,9 @@ class Agent {
             if (attempt >= retryMaxTimes) reject(err);
             if (typeof retryOn === 'function') {
               try {
-                Promise.resolve(retryOn(attempt, err, null))
+                return Promise.resolve(retryOn(attempt, err, null))
                   .then((retryOnResponse) => {
+                    if (attempt >= retryMaxTimes) reject(err);
                     if(retryOnResponse) {
                       retry(attempt, err, null);
                     } else {
@@ -393,9 +392,9 @@ class Agent {
 
       function retry(attempt: number, error: Error|null|undefined, response: Response|null|undefined) {
         const delay = (typeof retryDelay === 'function') ? retryDelay(attempt, error, response) : retryDelay;
-        setTimeout(function () {
+        setTimeout(() => {
           wrappedFetch(++attempt);
-        }, delay ?? DEFAULT_RETRY_DELAY);
+        }, delay);
       }
 
       wrappedFetch(0);
