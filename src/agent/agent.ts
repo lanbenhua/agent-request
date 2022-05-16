@@ -18,21 +18,26 @@ const ContentTypeMap: Record<string, string | undefined | null> = {
   blob: undefined,
 };
 
-export type RetryInit = {
+export type PollingInit<T, U> = {
+  interval?: number;
+  pollingOn?: number[] | ((error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => boolean | Promise<boolean>);
+}
+export type RetryInit<T, U> = {
   retryMaxTimes?: number;
-  retryDelay?: number | ((attempt: number, error: Error | null | undefined, response: Response | null | undefined) => number)
-  retryOn?: number[] | ((attempt: number, error: Error | null | undefined, response: Response | null | undefined) => boolean | Promise<boolean>);
+  retryDelay?: number | ((attempt: number, error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => number)
+  retryOn?: number[] | ((attempt: number, error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => boolean | Promise<boolean>);
 }
 export type QueueInit = {
   concurrency?: number;
   defaultName?: string;
   concurrencies?: Record<string, number>;
 }
-export type AgentInit = {
+export type AgentInit<T, U> = {
   base?: string;
   timeout?: number;
   queue?: QueueInit;
-  retry?: RetryInit;
+  retry?: RetryInit<T, U>;
+  polling?: PollingInit<T, U>;
 };
 export type AgentReqInit<T, U> = RequestInit &
   {
@@ -46,7 +51,8 @@ export type AgentReqInit<T, U> = RequestInit &
       name?: string;
       priority?: number | QueueTaskPriority;
     };
-    retry?: RetryInit;
+    retry?: RetryInit<T, U>;
+    polling?: PollingInit<T, U>;
     contentType?: ContentType | SupportedContentType;
     responseType?: ContentType | SupportedContentType;
   };
@@ -62,19 +68,19 @@ export interface AgentResponse<T, U> {
   __response__: Response;
 }
 
-const DEFAULT_AGENT_INIT: AgentInit = {}
+const DEFAULT_AGENT_INIT: RetryInit<any, any> = {}
 const DEFAULT_REQ_INIT: Partial<AgentReqInit<any, any>> = {
 };
 
 class Agent {
-  private _init?: AgentInit;
+  private _init?: AgentInit<any, any>;
   private _queues?: Map<string, Queue>;
   private _interceptors = {
     request: new InterceptorManager<AgentReqInit<any, any>>(),
     response: new InterceptorManager<AgentResponse<any, any>>(),
   };
 
-  public get init(): AgentInit | undefined {
+  public get init(): AgentInit<any, any> | undefined {
     return this._init;
   }
   public get queues(): Map<string, Queue> | undefined {
@@ -84,7 +90,7 @@ class Agent {
     return this._interceptors;
   }
 
-  constructor(init?: AgentInit) {
+  constructor(init?: AgentInit<any, any>) {
     this._init = {...DEFAULT_AGENT_INIT, ...init};
 
     this._initQueues();
@@ -145,6 +151,8 @@ class Agent {
     // resolve timeout auto abort
     this._resolveTimeoutAutoAbort<T, U>(resolveReqInit);
 
+    this._resolvePolling<T, U>(resolveReqInit);
+
     // handle request/response interceptors
     return this._handleInterceptors<T, U>(resolveReqInit);
   }
@@ -180,6 +188,12 @@ class Agent {
       reqInit.retry = {
         ...this._init?.retry,
         ...reqInit.retry,
+      }
+    }
+    if (this._init?.polling || reqInit.polling) {
+      reqInit.polling = {
+        ...this._init?.polling,
+        ...reqInit.polling,
       }
     }
 
@@ -245,9 +259,55 @@ class Agent {
     reqInit.__abortTimer = timer;
   }
 
-  private _handleInterceptors<T, U>(
-    reqInit: AgentReqInit<T, U>
-  ): Promise<AgentResponse<T, U>> {
+  private _resolvePolling<T, U>(reqInit: AgentReqInit<T, U>) {
+    const { 
+      pollingOn,
+      interval = 1000
+    } = reqInit.polling || {};
+    if (pollingOn && interval) {
+      const retry = () => {
+        setTimeout(() => { this.request<T, U>(reqInit) }, interval);
+      }
+
+      const interceptorsId = this._interceptors.response.use((res) => {
+        if (Array.isArray(pollingOn) && pollingOn.includes(res.status)) {
+          retry();
+        }
+        if (typeof pollingOn === 'function') {
+          try {
+            Promise.resolve(pollingOn(null, res))
+              .then((pollingOnRes) => {
+                if(pollingOnRes) retry();
+              }).catch(err => {
+                throw err
+              });
+          } catch (err) {
+            throw err
+          }
+        }
+        return res;
+      }, (err) => {
+        if (typeof pollingOn === 'function') {
+          try {
+            Promise.resolve(pollingOn(err, null))
+              .then((pollingOnRes) => {
+                if(pollingOnRes) retry();
+              }).catch(err => {
+                throw err
+              });
+          } catch (err) {
+            throw err
+          }
+        }
+      })
+
+      // @ts-ignore
+      reqInit.__interceptorsId = interceptorsId
+    }
+    
+  }
+
+  private _handleInterceptors<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
     const requestInterceptorChain: (
       | OnFulfilled<AgentReqInit<T, U>>
       | OnRejected
@@ -335,63 +395,55 @@ class Agent {
     return responsePromiseChain;
   }
 
-  private _wrappedFetch<T, U>(input: string, reqInit: AgentReqInit<T, U>): Promise<Response> {
+  private _dispatchFetch<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
     const { 
       retryOn,
       retryMaxTimes = 3, 
       retryDelay = 1000, 
     } = reqInit.retry || {};
 
-    if (!retryOn) return unfetch(input, reqInit);
+    if (!retryOn) return this._wrappedFetch<T, U>(reqInit);
 
     return new Promise((resolve, reject) => {
       const wrappedFetch = (attempt: number) => {
-        unfetch(input, reqInit)
-          .then((response: Response) => {
-            if (attempt >= retryMaxTimes) resolve(response);
-            if (Array.isArray(retryOn) && retryOn.indexOf(response.status) === -1) {
-              resolve(response);
+        this._wrappedFetch(reqInit)
+          .then((res) => {
+            if (attempt >= retryMaxTimes) resolve(res);
+            if (Array.isArray(retryOn) && retryOn.includes(res.status)) {
+              return retry<T, U>(attempt, null, res);
             } else if (typeof retryOn === 'function') {
               try {
-                return Promise.resolve(retryOn(attempt, null, response))
-                  .then((retryOnResponse) => {
-                    if (attempt >= retryMaxTimes) resolve(response);
-                    if(retryOnResponse) {
-                      retry(attempt, null, response);
-                    } else {
-                      resolve(response);
-                    }
+                return Promise.resolve(retryOn(attempt, null, res))
+                  .then((retryOnRes) => {
+                    if(retryOnRes) return retry<T, U>(attempt, null, res);
+                    resolve(res);
                   }).catch(reject);
-              } catch (error) {
-                reject(error);
+              } catch (err) {
+                reject(err);
               }
             }
-            resolve(response);
+            resolve(res);
           })
           .catch((err) => {
             if (attempt >= retryMaxTimes) reject(err);
             if (typeof retryOn === 'function') {
               try {
                 return Promise.resolve(retryOn(attempt, err, null))
-                  .then((retryOnResponse) => {
-                    if (attempt >= retryMaxTimes) reject(err);
-                    if(retryOnResponse) {
-                      retry(attempt, err, null);
-                    } else {
-                      reject(err);
-                    }
+                  .then((retryOnRes) => {
+                    if(retryOnRes) return retry<T, U>(attempt, err, null);
+                    reject(err);
                   })
                   .catch(reject);
-              } catch(error) {
-                reject(error);
+              } catch(err) {
+                reject(err);
               }
             }
             reject(err);
           });
       };
 
-      function retry(attempt: number, error: Error|null|undefined, response: Response|null|undefined) {
-        const delay = (typeof retryDelay === 'function') ? retryDelay(attempt, error, response) : retryDelay;
+      function retry<T, U>(attempt: number, error: Error|null|undefined, response: AgentResponse<T, U>|null|undefined) {
+        const delay = (typeof retryDelay === 'function') ? retryDelay(attempt, error, response as never) : retryDelay;
         setTimeout(() => {
           wrappedFetch(++attempt);
         }, delay);
@@ -401,7 +453,7 @@ class Agent {
     });
   };
 
-  private _dispatchFetch<T, U>(
+  private _wrappedFetch<T, U>(
     reqInit: AgentReqInit<T, U>
   ): Promise<AgentResponse<T, U>> {
     let __res__: Response;
@@ -418,7 +470,7 @@ class Agent {
       );
     }
 
-    return this._wrappedFetch<T, U>(url, reqInit)
+    return unfetch(url, reqInit)
       .then((res) => {
         __res__ = res;
 
@@ -449,8 +501,13 @@ class Agent {
         throw err;
       })
       .finally(() => {
-        // @ts-ignore
         this._clearTimeoutAutoAbort<T, U>(reqInit)
+
+        // @ts-ignore
+        if (reqInit.__interceptorsId !== undefined && reqInit.__interceptorsId !== null) {
+          // @ts-ignore
+          this._interceptors.response.reject(reqInit.__interceptorsId)
+        }
       })
   }
 
