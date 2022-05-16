@@ -7,7 +7,7 @@ export default function unfetch(url: string, options?: {
   credentials?: RequestCredentials | "include" | "omit" | "same-origin";
   body?: XMLHttpRequestBodyInit;  // Parameters<XMLHttpRequest["send"]>[0];
 }) {
-	options = options || {};
+	const opts = options || {};
 
 	return new Promise((resolve: Resolver, reject: Rejecter) => {
 		const request: XMLHttpRequest = new XMLHttpRequest();
@@ -32,7 +32,7 @@ export default function unfetch(url: string, options?: {
 			}
 		});
 
-		request.open(options.method || 'get', url, true);
+		request.open(opts.method || 'get', url, true);
 
 		request.onload = () => {
 			request.getAllResponseHeaders().replace(/^(.*?):[^\S\n]*([\s\S]*?)$/gm, (m: string, key: string, value: string): string => {
@@ -47,12 +47,12 @@ export default function unfetch(url: string, options?: {
 
 		request.onerror = reject;
 
-		request.withCredentials = options.credentials=='include';
+		request.withCredentials = opts.credentials=='include';
 
-		for (const i in options.headers) {
-			request.setRequestHeader(i, options.headers[i]);
+		for (const i in opts.headers) {
+			request.setRequestHeader(i, opts.headers[i]);
 		}
 
-		request.send(options.body || null);
+		request.send(opts.body || null);
 	});
 }

@@ -1,16 +1,23 @@
 import { SupportedContentType, ContentType } from './type';
 import InterceptorManager from "./interceptor-manager";
 import Queue, { QueueTaskPriority } from '../queue';
+export declare type RetryInit = {
+    retryMaxTimes?: number;
+    retryDelay?: number | ((attempt: number, error: Error | null | undefined, response: Response | null | undefined) => number);
+    retryOn?: number[] | ((attempt: number, error: Error | null | undefined, response: Response | null | undefined) => boolean | Promise<boolean>);
+};
+export declare type QueueInit = {
+    concurrency?: number;
+    defaultName?: string;
+    concurrencies?: Record<string, number>;
+};
 export declare type AgentInit = {
     base?: string;
     timeout?: number;
-    queue?: {
-        concurrency?: number;
-        defaultName?: string;
-        concurrencies?: Record<string, number>;
-    };
+    queue?: QueueInit;
+    retry?: RetryInit;
 };
-export declare type AgentReqInit<U> = RequestInit & {
+export declare type AgentReqInit<T, U> = RequestInit & {
     input: string;
     url?: string;
     base?: string;
@@ -21,6 +28,7 @@ export declare type AgentReqInit<U> = RequestInit & {
         name?: string;
         priority?: number | QueueTaskPriority;
     };
+    retry?: RetryInit;
     contentType?: ContentType | SupportedContentType;
     responseType?: ContentType | SupportedContentType;
 };
@@ -31,7 +39,7 @@ export interface AgentResponse<T, U> {
     status: number;
     statusText: string;
     headers: Response["headers"];
-    __init__: AgentReqInit<U> | undefined;
+    __init__: AgentReqInit<T, U> | undefined;
     __agent__: Agent;
     __response__: Response;
 }
@@ -42,19 +50,20 @@ declare class Agent {
     get init(): AgentInit | undefined;
     get queues(): Map<string, Queue> | undefined;
     get interceptors(): {
-        request: InterceptorManager<AgentReqInit<any>>;
+        request: InterceptorManager<AgentReqInit<any, any>>;
         response: InterceptorManager<AgentResponse<any, any>>;
     };
     constructor(init?: AgentInit);
     queue(name: string): Queue | undefined;
     private _initQueues;
     private _createOrGetQueue;
-    request<T, U>(reqInit: AgentReqInit<U>): Promise<AgentResponse<T, U>>;
+    request<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>>;
     private _request;
     private _resolveInput;
     private _resolveReqInit;
     private _resolveTimeoutAutoAbort;
     private _handleInterceptors;
+    private _wrappedFetch;
     private _dispatchFetch;
     private _clearTimeoutAutoAbort;
     private _checkResponseType;
