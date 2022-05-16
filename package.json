@@ -1,6 +1,6 @@
 {
   "name": "agentch",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "request agent base on fetch",
   "keywords": [
     "fetch",
