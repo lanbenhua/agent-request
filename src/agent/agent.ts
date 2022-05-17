@@ -4,7 +4,7 @@ import InterceptorManager, { OnFulfilled, OnRejected } from "./interceptor-manag
 import BodyParser from "./body-parser";
 import Queue, { QueueTaskPriority } from '../queue';
 import { TimeoutError } from './error';
-import { fetch as whatwgFetch } from 'whatwg-fetch/fetch';
+import { fetch as whatwgFetch, } from 'whatwg-fetch/fetch';
 
 // TODO: make polyfill to support more platform
 const unfetch = self.fetch || whatwgFetch;
@@ -18,10 +18,6 @@ const ContentTypeMap: Record<string, string | undefined | null> = {
   blob: undefined,
 };
 
-export type PollingInit<T, U> = {
-  interval?: number;
-  pollingOn?: number[] | ((error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => boolean | Promise<boolean>);
-}
 export type RetryInit<T, U> = {
   retryMaxTimes?: number;
   retryDelay?: number | ((attempt: number, error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => number)
@@ -37,7 +33,6 @@ export type AgentInit<T, U> = {
   timeout?: number;
   queue?: QueueInit;
   retry?: RetryInit<T, U>;
-  polling?: PollingInit<T, U>;
 };
 export type AgentReqInit<T, U> = RequestInit &
   {
@@ -52,7 +47,6 @@ export type AgentReqInit<T, U> = RequestInit &
       priority?: number | QueueTaskPriority;
     };
     retry?: RetryInit<T, U>;
-    polling?: PollingInit<T, U>;
     contentType?: ContentType | SupportedContentType;
     responseType?: ContentType | SupportedContentType;
   };
@@ -69,8 +63,7 @@ export interface AgentResponse<T, U> {
 }
 
 const DEFAULT_AGENT_INIT: RetryInit<any, any> = {}
-const DEFAULT_REQ_INIT: Partial<AgentReqInit<any, any>> = {
-};
+const DEFAULT_REQ_INIT: Partial<AgentReqInit<any, any>> = {};
 
 class Agent {
   private _init?: AgentInit<any, any>;
@@ -103,6 +96,20 @@ class Agent {
     return this._queues?.get(name);
   }
 
+  public request<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
+    if (this._queues) {
+      const queueName = reqInit.queue?.name ?? this._init?.queue?.defaultName;
+      const queueConcurrency =  this._init?.queue?.concurrency;
+      const queue = this._createOrGetQueue(queueName, queueConcurrency)
+      return queue.enqueue<AgentResponse<T, U>>({
+        runner: () => this._request(reqInit),
+        priority: reqInit.queue?.priority,
+      })
+    }
+   
+    return this._request(reqInit)
+  }
+
   private _initQueues() {
     if (!this._init) return;
     if (!this._init.queue) return;
@@ -127,20 +134,6 @@ class Agent {
     return newQueue;
   }
 
-  public request<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
-    if (this._queues) {
-      const queueName = reqInit.queue?.name ?? this._init?.queue?.defaultName;
-      const queueConcurrency =  this._init?.queue?.concurrency;
-      const queue = this._createOrGetQueue(queueName, queueConcurrency)
-      return queue.enqueue<AgentResponse<T, U>>({
-        runner: () => this._request(reqInit),
-        priority: reqInit.queue?.priority,
-      })
-    }
-   
-    return this._request(reqInit)
-  }
-
   private _request<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
     // resolve input
     this._resolveInput<T, U>(reqInit);
@@ -151,7 +144,7 @@ class Agent {
     // resolve timeout auto abort
     this._resolveTimeoutAutoAbort<T, U>(resolveReqInit);
 
-    this._resolvePolling<T, U>(resolveReqInit);
+    // this._resolvePolling<T, U>(resolveReqInit);
 
     // handle request/response interceptors
     return this._handleInterceptors<T, U>(resolveReqInit);
@@ -184,36 +177,19 @@ class Agent {
       ...reqInit,
     };
 
-    if (this._init?.retry || reqInit.retry) {
-      reqInit.retry = {
-        ...this._init?.retry,
-        ...reqInit.retry,
-      }
-    }
-    if (this._init?.polling || reqInit.polling) {
-      reqInit.polling = {
-        ...this._init?.polling,
-        ...reqInit.polling,
-      }
-    }
+    if (this._init?.retry || reqInit.retry) reqInit.retry = { ...this._init?.retry, ...reqInit.retry }
 
     // set default method equals GET if none
     // then transform to upper case
-    if (!reqInit.method) reqInit.method = Method.GET;
-    reqInit.method = reqInit.method.toUpperCase();
+    reqInit.method = (reqInit.method ?? Method.GET).toUpperCase();
 
     // handle content-type header according to the contentType
     // if no contentType, will ignore
     // else handle the responsible content type according to the ContentTypeMap
-    const reqContentType =
-      reqInit?.contentType &&
-      ContentTypeMap[reqInit?.contentType];
-    const h: RequestInit["headers"] = {
-      ...(reqContentType ? { "Content-Type": reqContentType } : null),
-    };
+    const reqContentType = reqInit?.contentType && ContentTypeMap[reqInit?.contentType];
     reqInit.headers = {
       ...DEFAULT_REQ_INIT.headers,
-      ...h,
+      ...(reqContentType ? { "Content-Type": reqContentType } : null),
       ...reqInit.headers,
     };
 
@@ -241,7 +217,6 @@ class Agent {
     const controller = new AbortController();
 
     controller.signal.onabort = function abortHandler() {
-      // console.log(`ev`, ev, this, ev.target, this.aborted, this.reason);
       // @ts-ignore
       reqInit.__aborter = this;
     }
@@ -257,57 +232,6 @@ class Agent {
 
     // @ts-ignore
     reqInit.__abortTimer = timer;
-  }
-
-  private _resolvePolling<T, U>(reqInit: AgentReqInit<T, U>) {
-    const { 
-      pollingOn,
-      interval = 1000
-    } = reqInit.polling || {};
-    if (pollingOn && interval) {
-      const retry = () => {
-        setTimeout(() => {
-          this._clearPolling<T, U>(reqInit);
-          this.request<T, U>(reqInit);
-        }, interval);
-      }
-
-      const interceptorsId = this._interceptors.response.use((res) => {
-        if (Array.isArray(pollingOn) && pollingOn.includes(res.status)) {
-          retry();
-        } else if (typeof pollingOn === 'function') {
-          try {
-            Promise.resolve(pollingOn(null, res))
-              .then((pollingOnRes) => {
-                if(pollingOnRes) retry();
-              }).catch(err => {
-                throw err
-              });
-          } catch (err) {
-            throw err
-          }
-        } 
-        return res;
-      }, (err) => {
-        if (typeof pollingOn === 'function') {
-          try {
-            Promise.resolve(pollingOn(err, null))
-              .then((pollingOnRes) => {
-                if(pollingOnRes) retry();
-              }).catch(err => {
-                throw err
-              });
-          } catch (err) {
-            throw err
-          }
-        }
-        return err;
-      })
-
-      // @ts-ignore
-      reqInit.__interceptorsId = interceptorsId
-    }
-    
   }
 
   private _handleInterceptors<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
@@ -411,41 +335,36 @@ class Agent {
       const wrappedFetch = (attempt: number) => {
         this._wrappedFetch(reqInit)
           .then((res) => {
-            if (attempt >= retryMaxTimes) {
-              resolve(res);
-            } else if (Array.isArray(retryOn) && retryOn.includes(res.status)) {
-              retry<T, U>(attempt, null, res);
-            } else if (typeof retryOn === 'function') {
+            if (attempt >= retryMaxTimes) return resolve(res);
+            if (Array.isArray(retryOn) && retryOn.includes(res.status)) return retry<T, U>(attempt, null, res);
+            if (typeof retryOn === 'function') {
               try {
-                Promise.resolve(retryOn(attempt, null, res))
+                return Promise.resolve(retryOn(attempt, null, res))
                   .then((retryOnRes) => {
-                    if(retryOnRes) retry<T, U>(attempt, null, res);
-                    else resolve(res);
+                    if(retryOnRes) return retry<T, U>(attempt, null, res);
+                    return resolve(res);
                   }).catch(reject);
               } catch (err) {
-                reject(err);
+                return reject(err);
               }
-            } else {
-              resolve(res);
             }
+            resolve(res);
           })
           .catch((err) => {
-            if (attempt >= retryMaxTimes) {
-              reject(err);
-            } else if (typeof retryOn === 'function') {
+            if (attempt >= retryMaxTimes) return reject(err);
+            if (typeof retryOn === 'function') {
               try {
-                Promise.resolve(retryOn(attempt, err, null))
+                return Promise.resolve(retryOn(attempt, err, null))
                   .then((retryOnRes) => {
-                    if(retryOnRes) retry<T, U>(attempt, err, null);
-                    else reject(err);
+                    if(retryOnRes) return retry<T, U>(attempt, err, null);
+                    return reject(err);
                   })
                   .catch(reject);
               } catch(err) {
-                reject(err);
+                return reject(err);
               }
-            } else {
-              reject(err);
-            }
+            } 
+            reject(err);
           });
       };
 
@@ -469,13 +388,7 @@ class Agent {
 
     // Actually this wil be never reached!
     // if reached, must be an unexcepted error
-    if (!url) {
-      return Promise.reject(
-        new Error(
-          "Agent: unexpected error, url must have a value and be a string, but null!"
-        )
-      );
-    }
+    if (!url) return Promise.reject(new Error('Agent: unexpected error, url must have a value and be a string, but null!'));
 
     return unfetch(url, reqInit)
       .then((res) => {
@@ -491,9 +404,7 @@ class Agent {
 
         throw new Error(`Agent: unexcepted response type '${responseType}'`)
       })
-      .then((data) => {
-        return this._decorateResponse<T, U>(reqInit, __res__, data);
-      })
+      .then((data) => this._decorateResponse<T, U>(reqInit, __res__, data))
       .catch((err) => {
         // @ts-ignore
         const aborter: AbortSignal | undefined = reqInit.__aborter
@@ -509,17 +420,7 @@ class Agent {
       })
       .finally(() => {
         this._clearTimeoutAutoAbort<T, U>(reqInit)
-
-        this._clearPolling<T, U>(reqInit);
       })
-  }
-
-  private _clearPolling<T, U>(reqInit: AgentReqInit<T, U>) {
-    // @ts-ignore
-    if (reqInit.__interceptorsId !== undefined && reqInit.__interceptorsId !== null) {
-      // @ts-ignore
-      this._interceptors.response.reject(reqInit.__interceptorsId)
-    }
   }
 
   private _clearTimeoutAutoAbort<T, U>(reqInit: AgentReqInit<T, U>) {

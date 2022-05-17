@@ -1,10 +1,6 @@
 import { SupportedContentType, ContentType } from './type';
 import InterceptorManager from "./interceptor-manager";
 import Queue, { QueueTaskPriority } from '../queue';
-export declare type PollingInit<T, U> = {
-    interval?: number;
-    pollingOn?: number[] | ((error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => boolean | Promise<boolean>);
-};
 export declare type RetryInit<T, U> = {
     retryMaxTimes?: number;
     retryDelay?: number | ((attempt: number, error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => number);
@@ -20,7 +16,6 @@ export declare type AgentInit<T, U> = {
     timeout?: number;
     queue?: QueueInit;
     retry?: RetryInit<T, U>;
-    polling?: PollingInit<T, U>;
 };
 export declare type AgentReqInit<T, U> = RequestInit & {
     input: string;
@@ -34,7 +29,6 @@ export declare type AgentReqInit<T, U> = RequestInit & {
         priority?: number | QueueTaskPriority;
     };
     retry?: RetryInit<T, U>;
-    polling?: PollingInit<T, U>;
     contentType?: ContentType | SupportedContentType;
     responseType?: ContentType | SupportedContentType;
 };
@@ -61,18 +55,16 @@ declare class Agent {
     };
     constructor(init?: AgentInit<any, any>);
     queue(name: string): Queue | undefined;
+    request<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>>;
     private _initQueues;
     private _createOrGetQueue;
-    request<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>>;
     private _request;
     private _resolveInput;
     private _resolveReqInit;
     private _resolveTimeoutAutoAbort;
-    private _resolvePolling;
     private _handleInterceptors;
     private _dispatchFetch;
     private _wrappedFetch;
-    private _clearPolling;
     private _clearTimeoutAutoAbort;
     private _checkResponseType;
     private _decorateResponse;
