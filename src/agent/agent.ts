@@ -1,78 +1,81 @@
 import { Method, SupportedContentType, ContentType } from './type';
-import InterceptorManager, { OnFulfilled, OnRejected } from "./interceptor-manager";
-// import AbortManager from "./abort-manager";
-import BodyParser from "./body-parser";
+import InterceptorManager, {
+  OnFulfilled,
+  OnRejected,
+} from './interceptor-manager';
+import BodyParser from './body-parser';
 import Queue, { QueueTaskPriority } from '../queue';
 import { TimeoutError } from './error';
-import { fetch as whatwgFetch } from 'whatwg-fetch/fetch';
-
-// TODO: make polyfill to support more platform
-const unfetch = self.fetch || whatwgFetch;
 
 const ContentTypeMap: Record<string, string | undefined | null> = {
-  json: "application/json; charset=utf-8",
-  form: "application/x-www-form-urlencoded; charset=utf-8",
+  json: 'application/json; charset=utf-8',
+  form: 'application/x-www-form-urlencoded; charset=utf-8',
   formdata: undefined,
-  buffer: "text/plain; charset=utf-8",
-  text: "text/plain; charset=utf-8",
+  buffer: 'text/plain; charset=utf-8',
+  text: 'text/plain; charset=utf-8',
   blob: undefined,
 };
 
-export type PollingInit<T, U> = {
-  interval?: number;
-  pollingOn?: number[] | ((error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => boolean | Promise<boolean>);
-}
-export type RetryInit<T, U> = {
+type RetryInit<T, U> = {
   retryMaxTimes?: number;
-  retryDelay?: number | ((attempt: number, error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => number)
-  retryOn?: number[] | ((attempt: number, error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => boolean | Promise<boolean>);
-}
-export type QueueInit = {
-  concurrency?: number;
-  defaultName?: string;
-  concurrencies?: Record<string, number>;
-}
+  retryDelay?:
+    | number
+    | ((
+        attempt: number,
+        error: Error | null | undefined,
+        response: AgentResponse<T, U> | null | undefined
+      ) => number);
+  retryOn?:
+    | number[]
+    | ((
+        attempt: number,
+        error: Error | null | undefined,
+        response: AgentResponse<T, U> | null | undefined
+      ) => boolean | Promise<boolean>);
+};
+type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 export type AgentInit<T, U> = {
   base?: string;
   timeout?: number;
-  queue?: QueueInit;
-  retry?: RetryInit<T, U>;
-  polling?: PollingInit<T, U>;
-};
-export type AgentReqInit<T, U> = RequestInit &
-  {
-    input: string;
-    url?: string;
-    base?: string;
-    data?: U;
-    timeout?: number;
-    abortController?: AbortController;
-    queue?: {
-      name?: string;
-      priority?: number | QueueTaskPriority;
-    };
-    retry?: RetryInit<T, U>;
-    polling?: PollingInit<T, U>;
-    contentType?: ContentType | SupportedContentType;
-    responseType?: ContentType | SupportedContentType;
+  queue?: {
+    concurrency?: number;
+    defaultName?: string;
+    concurrencies?: Record<string, number>;
   };
+  retry?: RetryInit<T, U>;
+};
+export type AgentReqInit<T, U> = RequestInit & {
+  input: string;
+  url?: string;
+  base?: string;
+  data?: U;
+  timeout?: number;
+  abortController?: AbortController;
+  queue?: {
+    name?: string;
+    priority?: number | QueueTaskPriority;
+  };
+  retry?: RetryInit<T, U>;
+  contentType?: ContentType | SupportedContentType;
+  responseType?: ContentType | SupportedContentType;
+};
 export interface AgentResponse<T, U> {
   url: string;
   data: T | undefined;
   ok: boolean;
   status: number;
   statusText: string;
-  headers: Response["headers"];
+  headers: Response['headers'];
   __init__: AgentReqInit<T, U> | undefined;
   __agent__: Agent;
   __response__: Response;
 }
 
-const DEFAULT_AGENT_INIT: RetryInit<any, any> = {}
-const DEFAULT_REQ_INIT: Partial<AgentReqInit<any, any>> = {
-};
+const DEFAULT_AGENT_INIT: RetryInit<any, any> = {};
+const DEFAULT_REQ_INIT: Partial<AgentReqInit<any, any>> = {};
 
 class Agent {
+  private _fetch: Fetch;
   private _init?: AgentInit<any, any>;
   private _queues?: Map<string, Queue>;
   private _interceptors = {
@@ -80,6 +83,9 @@ class Agent {
     response: new InterceptorManager<AgentResponse<any, any>>(),
   };
 
+  public get fetch(): Fetch {
+    return this._fetch;
+  }
   public get init(): AgentInit<any, any> | undefined {
     return this._init;
   }
@@ -90,17 +96,35 @@ class Agent {
     return this._interceptors;
   }
 
-  constructor(init?: AgentInit<any, any>) {
-    this._init = {...DEFAULT_AGENT_INIT, ...init};
+  constructor(fetch: Fetch, init?: AgentInit<any, any>) {
+    if (!fetch) throw new Error('Fetch must be a function but null');
+    this._fetch = fetch;
+    this._init = { ...DEFAULT_AGENT_INIT, ...init };
 
     this._initQueues();
 
     this._request = this._request.bind(this);
-    this._dispatchFetch = this._dispatchFetch.bind(this);
+    this._wrappedFetch = this._wrappedFetch.bind(this);
   }
 
   public queue(name: string): Queue | undefined {
     return this._queues?.get(name);
+  }
+
+  public request<T, U>(
+    reqInit: AgentReqInit<T, U>
+  ): Promise<AgentResponse<T, U>> {
+    if (this._queues) {
+      const queueName = reqInit.queue?.name ?? this._init?.queue?.defaultName;
+      const queueConcurrency = this._init?.queue?.concurrency;
+      const queue = this._createOrGetQueue(queueName, queueConcurrency);
+      return queue.enqueue<AgentResponse<T, U>>({
+        runner: () => this._request(reqInit),
+        priority: reqInit.queue?.priority,
+      });
+    }
+
+    return this._request(reqInit);
   }
 
   private _initQueues() {
@@ -109,17 +133,20 @@ class Agent {
     const { queue } = this._init;
     const { concurrency, defaultName, concurrencies } = queue;
     if (concurrency && defaultName) {
-      this._createOrGetQueue(defaultName, concurrency)
+      this._createOrGetQueue(defaultName, concurrency);
     }
     if (concurrencies) {
       Object.entries(concurrencies).map(([name, concurrency]) => {
-        this._createOrGetQueue(name, concurrency)
-      })
+        this._createOrGetQueue(name, concurrency);
+      });
     }
   }
 
-  private _createOrGetQueue(name: string = 'default', concurrency: number = 5): Queue {
-    if (!this._queues) this._queues = new Map<string, Queue>(); 
+  private _createOrGetQueue(
+    name: string = 'default',
+    concurrency: number = 5
+  ): Queue {
+    if (!this._queues) this._queues = new Map<string, Queue>();
     const oldQueue = this.queue(name);
     if (oldQueue) return oldQueue;
     const newQueue = new Queue(concurrency);
@@ -127,105 +154,86 @@ class Agent {
     return newQueue;
   }
 
-  public request<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
-    if (this._queues) {
-      const queueName = reqInit.queue?.name ?? this._init?.queue?.defaultName;
-      const queueConcurrency =  this._init?.queue?.concurrency;
-      const queue = this._createOrGetQueue(queueName, queueConcurrency)
-      return queue.enqueue<AgentResponse<T, U>>({
-        runner: () => this._request(reqInit),
-        priority: reqInit.queue?.priority,
-      })
-    }
-   
-    return this._request(reqInit)
-  }
-
-  private _request<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
-    // resolve input
-    this._resolveInput<T, U>(reqInit);
-
+  private _request<T, U>(
+    reqInit: AgentReqInit<T, U>
+  ): Promise<AgentResponse<T, U>> {
     // resolve reqInit
-    const resolveReqInit = this._resolveReqInit<T, U>(reqInit);
-
+    const reqInit2 = this._resolveReqInit<T, U>(reqInit);
     // resolve timeout auto abort
-    this._resolveTimeoutAutoAbort<T, U>(resolveReqInit);
-
-    this._resolvePolling<T, U>(resolveReqInit);
+    this._resolveTimeoutAutoAbort<T, U>(reqInit2);
 
     // handle request/response interceptors
-    return this._handleInterceptors<T, U>(resolveReqInit);
+    return this._dispatchFetch<T, U>(reqInit2)
+      .catch((err) => {
+        this._checkAborter<T, U>(reqInit2);
+        throw err;
+      })
+      .finally(() => {
+        this._clearTimeoutAutoAbort<T, U>(reqInit2);
+      });
   }
 
-  private _resolveInput<T, U>(reqInit: AgentReqInit<T, U>) {
-    let url = path_join(reqInit?.base ?? this._init?.base, reqInit.input);
-
-    // If the method is GET, we should merge the data of reqInit and url search
-    if (reqInit?.method?.toUpperCase() === Method.GET && reqInit?.data) {
-      const qIndex = url.indexOf("?");
-      const path = qIndex < 0 ? url : url.slice(0, url.indexOf("?"));
-      const search =
-        qIndex < 0
-          ? resolve_search_params("", reqInit?.data)
-          : resolve_search_params(url.slice(url.indexOf("?")), reqInit?.data);
-
-      url = path + (search ? `?${search}` : "");
-    }
-
-    // update url after resolved
-    reqInit.url = url;
-  }
-
-  private _resolveReqInit<T, U>(reqInit: AgentReqInit<T, U>): AgentReqInit<T, U> {
-    reqInit = {
+  private _resolveReqInit<T, U>(
+    reqInit: AgentReqInit<T, U>
+  ): AgentReqInit<T, U> {
+    const reqInit2 = {
       ...DEFAULT_REQ_INIT,
-      base: this._init?.base,
-      timeout: this._init?.timeout,
       ...reqInit,
+      base: reqInit.base ?? this._init?.base,
+      timeout: reqInit.timeout ?? this._init?.timeout,
     };
 
-    if (this._init?.retry || reqInit.retry) {
-      reqInit.retry = {
-        ...this._init?.retry,
-        ...reqInit.retry,
-      }
-    }
-    if (this._init?.polling || reqInit.polling) {
-      reqInit.polling = {
-        ...this._init?.polling,
-        ...reqInit.polling,
-      }
-    }
+    // resolve input
+    reqInit2.url = this._resolveInput<T, U>(reqInit);
+
+    if (this._init?.retry)
+      reqInit2.retry = { ...this._init?.retry, ...reqInit.retry };
 
     // set default method equals GET if none
     // then transform to upper case
-    if (!reqInit.method) reqInit.method = Method.GET;
-    reqInit.method = reqInit.method.toUpperCase();
+    reqInit2.method = (reqInit.method ?? Method.GET).toUpperCase();
 
     // handle content-type header according to the contentType
     // if no contentType, will ignore
     // else handle the responsible content type according to the ContentTypeMap
     const reqContentType =
-      reqInit?.contentType &&
-      ContentTypeMap[reqInit?.contentType];
-    const h: RequestInit["headers"] = {
-      ...(reqContentType ? { "Content-Type": reqContentType } : null),
-    };
-    reqInit.headers = {
+      reqInit?.contentType && ContentTypeMap[reqInit?.contentType];
+    console.log(`reqContentType`, reqContentType);
+    reqInit2.headers = {
       ...DEFAULT_REQ_INIT.headers,
-      ...h,
+      ...(reqContentType ? { 'content-type': reqContentType } : null),
       ...reqInit.headers,
     };
 
     // if init includes body, will use it directly
     // else handle the responsible body
-    reqInit.body = reqInit.method === Method.GET || reqInit.method === Method.HEAD 
-      ? undefined
-      : reqInit.body !== undefined && reqInit.body !== null 
-      ? reqInit.body
-      : new BodyParser(reqInit?.contentType).marshal(reqInit.data)
+    reqInit2.body =
+      reqInit.method === Method.GET || reqInit.method === Method.HEAD
+        ? undefined
+        : reqInit.body !== undefined && reqInit.body !== null
+        ? reqInit.body
+        : new BodyParser(reqInit?.contentType).marshal(reqInit.data);
 
-    return reqInit;
+    return reqInit2;
+  }
+
+  private _resolveInput<T, U>(reqInit: AgentReqInit<T, U>): string {
+    let url = path_join(reqInit?.base ?? this._init?.base, reqInit.input);
+
+    // If the method is GET, we should merge the data of reqInit and url search
+    if (reqInit?.method?.toUpperCase() === Method.GET && reqInit?.data) {
+      const qIndex = url.indexOf('?');
+      const path = qIndex < 0 ? url : url.slice(0, url.indexOf('?'));
+      const search =
+        qIndex < 0
+          ? resolve_search_params('', reqInit?.data)
+          : resolve_search_params(url.slice(url.indexOf('?')), reqInit?.data);
+
+      url = path + (search ? `?${search}` : '');
+    }
+
+    // update url after resolved
+    return url;
   }
 
   private _resolveTimeoutAutoAbort<T, U>(reqInit: AgentReqInit<T, U>) {
@@ -241,76 +249,101 @@ class Agent {
     const controller = new AbortController();
 
     controller.signal.onabort = function abortHandler() {
-      // console.log(`ev`, ev, this, ev.target, this.aborted, this.reason);
       // @ts-ignore
       reqInit.__aborter = this;
-    }
+      controller.signal.onabort = null;
+    };
 
     reqInit.abortController = controller;
     reqInit.signal = controller.signal;
 
     const timer = setTimeout(() => {
-      controller.abort("Timeout of exceeded");
- 
-      this._clearTimeoutAutoAbort<T, U>(reqInit);
+      controller.abort('Timeout of exceeded');
     }, timeout);
 
     // @ts-ignore
     reqInit.__abortTimer = timer;
   }
 
-  private _resolvePolling<T, U>(reqInit: AgentReqInit<T, U>) {
-    const { 
-      pollingOn,
-      interval = 1000
-    } = reqInit.polling || {};
-    if (pollingOn && interval) {
-      const retry = () => {
+  private _dispatchFetch<T, U>(
+    reqInit: AgentReqInit<T, U>
+  ): Promise<AgentResponse<T, U>> {
+    const {
+      retryOn,
+      retryMaxTimes = 2,
+      retryDelay = 1000,
+    } = reqInit.retry || {};
+
+    if (!retryOn) return this._handleInterceptors<T, U>(reqInit);
+
+    return new Promise((resolve, reject) => {
+      const wrappedFetch = (attempt: number) => {
+        if (attempt > retryMaxTimes)
+          return reject(new Error('Maximum exceeded'));
+        try {
+          this._checkAborter<T, U>(reqInit);
+        } catch (err) {
+          return reject(err);
+        }
+
+        this._handleInterceptors<T, U>(reqInit)
+          .then((res) => {
+            if (attempt >= retryMaxTimes) return resolve(res);
+            if (Array.isArray(retryOn) && retryOn.includes(res.status))
+              return retry(attempt, null, res);
+            if (typeof retryOn === 'function') {
+              try {
+                return Promise.resolve(retryOn(attempt, null, res))
+                  .then((retryOnRes) => {
+                    if (retryOnRes) return retry(attempt, null, res);
+                    return resolve(res);
+                  })
+                  .catch(reject);
+              } catch (err) {
+                return reject(err);
+              }
+            }
+            resolve(res);
+          })
+          .catch((err) => {
+            if (attempt >= retryMaxTimes) return reject(err);
+            if (typeof retryOn === 'function') {
+              try {
+                return Promise.resolve(retryOn(attempt, err, null))
+                  .then((retryOnRes) => {
+                    if (retryOnRes) return retry(attempt, err, null);
+                    return reject(err);
+                  })
+                  .catch(reject);
+              } catch (err) {
+                return reject(err);
+              }
+            }
+            reject(err);
+          });
+      };
+
+      function retry(
+        attempt: number,
+        error: Error | null | undefined,
+        response: AgentResponse<T, U> | null | undefined
+      ) {
+        const delay =
+          typeof retryDelay === 'function'
+            ? retryDelay(attempt, error, response)
+            : retryDelay;
         setTimeout(() => {
-          this._clearPolling<T, U>(reqInit);
-          this.request<T, U>(reqInit);
-        }, interval);
+          wrappedFetch(++attempt);
+        }, delay);
       }
 
-      const interceptorsId = this._interceptors.response.use((res) => {
-        if (Array.isArray(pollingOn) && pollingOn.includes(res.status)) {
-          retry();
-        } else if (typeof pollingOn === 'function') {
-          try {
-            Promise.resolve(pollingOn(null, res))
-              .then((pollingOnRes) => {
-                if(pollingOnRes) retry();
-              }).catch(err => {
-                throw err
-              });
-          } catch (err) {
-            throw err
-          }
-        } 
-        return res;
-      }, (err) => {
-        if (typeof pollingOn === 'function') {
-          try {
-            Promise.resolve(pollingOn(err, null))
-              .then((pollingOnRes) => {
-                if(pollingOnRes) retry();
-              }).catch(err => {
-                throw err
-              });
-          } catch (err) {
-            throw err
-          }
-        }
-        return err;
-      })
-
-      // @ts-ignore
-      reqInit.__interceptorsId = interceptorsId
-    }
-    
+      wrappedFetch(0);
+    });
   }
 
-  private _handleInterceptors<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
+  private _handleInterceptors<T, U>(
+    reqInit: AgentReqInit<T, U>
+  ): Promise<AgentResponse<T, U>> {
     const requestInterceptorChain: (
       | OnFulfilled<AgentReqInit<T, U>>
       | OnRejected
@@ -321,7 +354,7 @@ class Agent {
     this._interceptors.request.forEach((interceptor) => {
       const { runWhen, onFulfilled, onRejected } = interceptor;
 
-      if (typeof runWhen === "function" && runWhen(reqInit) === false) return;
+      if (typeof runWhen === 'function' && runWhen(reqInit) === false) return;
 
       synchronousRequestInterceptors =
         synchronousRequestInterceptors && interceptor.synchronous;
@@ -349,7 +382,7 @@ class Agent {
         | undefined
         | ((reqInit: AgentReqInit<T, U>) => Promise<AgentResponse<T, U>>)
         | OnFulfilled<AgentResponse<T, U>>
-      )[] = [this._dispatchFetch, undefined];
+      )[] = [this._wrappedFetch, undefined];
 
       Array.prototype.unshift.apply(chain, requestInterceptorChain);
       chain = chain.concat(responseInterceptorChain);
@@ -362,7 +395,7 @@ class Agent {
           promiseChain = promiseChain.then(onFulfilled as never, onRejected);
       }
 
-      return promiseChain as never as Promise<AgentResponse<T, U>>;
+      return promiseChain as unknown as Promise<AgentResponse<T, U>>;
     }
 
     let chainReqInit = reqInit;
@@ -381,7 +414,7 @@ class Agent {
     }
 
     let responsePromiseChain: Promise<AgentResponse<T, U>> =
-      this._dispatchFetch(chainReqInit);
+      this._wrappedFetch(chainReqInit);
 
     while (responseInterceptorChain.length) {
       const onFulfilled: OnFulfilled<AgentResponse<T, U>> | undefined =
@@ -398,68 +431,6 @@ class Agent {
     return responsePromiseChain;
   }
 
-  private _dispatchFetch<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
-    const { 
-      retryOn,
-      retryMaxTimes = 3, 
-      retryDelay = 1000, 
-    } = reqInit.retry || {};
-
-    if (!retryOn) return this._wrappedFetch<T, U>(reqInit);
-
-    return new Promise((resolve, reject) => {
-      const wrappedFetch = (attempt: number) => {
-        this._wrappedFetch(reqInit)
-          .then((res) => {
-            if (attempt >= retryMaxTimes) {
-              resolve(res);
-            } else if (Array.isArray(retryOn) && retryOn.includes(res.status)) {
-              retry<T, U>(attempt, null, res);
-            } else if (typeof retryOn === 'function') {
-              try {
-                Promise.resolve(retryOn(attempt, null, res))
-                  .then((retryOnRes) => {
-                    if(retryOnRes) retry<T, U>(attempt, null, res);
-                    else resolve(res);
-                  }).catch(reject);
-              } catch (err) {
-                reject(err);
-              }
-            } else {
-              resolve(res);
-            }
-          })
-          .catch((err) => {
-            if (attempt >= retryMaxTimes) {
-              reject(err);
-            } else if (typeof retryOn === 'function') {
-              try {
-                Promise.resolve(retryOn(attempt, err, null))
-                  .then((retryOnRes) => {
-                    if(retryOnRes) retry<T, U>(attempt, err, null);
-                    else reject(err);
-                  })
-                  .catch(reject);
-              } catch(err) {
-                reject(err);
-              }
-            } else {
-              reject(err);
-            }
-          });
-      };
-
-      function retry<T, U>(attempt: number, error: Error|null|undefined, response: AgentResponse<T, U>|null|undefined) {
-        const delay = (typeof retryDelay === 'function') ? retryDelay(attempt, error, response as never) : retryDelay;
-        setTimeout(() => {
-          wrappedFetch(++attempt);
-        }, delay);
-      }
-
-      wrappedFetch(0);
-    });
-  };
-
   private _wrappedFetch<T, U>(
     reqInit: AgentReqInit<T, U>
   ): Promise<AgentResponse<T, U>> {
@@ -469,15 +440,14 @@ class Agent {
 
     // Actually this wil be never reached!
     // if reached, must be an unexcepted error
-    if (!url) {
+    if (!url)
       return Promise.reject(
         new Error(
-          "Agent: unexpected error, url must have a value and be a string, but null!"
+          'Agent: unexpected error, url must have a value and be a string, but null!'
         )
       );
-    }
 
-    return unfetch(url, reqInit)
+    return this._fetch(url, reqInit)
       .then((res) => {
         __res__ = res;
 
@@ -487,62 +457,69 @@ class Agent {
         if (responseType === ContentType.BUFFER) return res.arrayBuffer();
         if (responseType === ContentType.TEXT) return res.text();
         if (responseType === ContentType.BLOB) return res.blob();
-        if (responseType === ContentType.FORM || responseType === ContentType.FORMDATA) return res.formData();
+        if (
+          responseType === ContentType.FORM ||
+          responseType === ContentType.FORMDATA
+        )
+          return res.formData();
 
-        throw new Error(`Agent: unexcepted response type '${responseType}'`)
+        throw new Error(`Agent: unexcepted response type '${responseType}'`);
       })
-      .then((data) => {
-        return this._decorateResponse<T, U>(reqInit, __res__, data);
-      })
-      .catch((err) => {
-        // @ts-ignore
-        const aborter: AbortSignal | undefined = reqInit.__aborter
-        if (aborter) {
-          // @ts-ignore
-          delete reqInit.__aborter
-          if (aborter.aborted) {
-            // @ts-ignore
-            throw new TimeoutError(aborter.reason ?? 'Timeout of exceeded', 'TimeoutError')
-          }
-        }
-        throw err;
-      })
-      .finally(() => {
-        this._clearTimeoutAutoAbort<T, U>(reqInit)
-
-        this._clearPolling<T, U>(reqInit);
-      })
+      .then((data) => this._decorateResponse<T, U>(reqInit, __res__, data));
   }
 
-  private _clearPolling<T, U>(reqInit: AgentReqInit<T, U>) {
+  private _checkAborter<T, U>(reqInit: AgentReqInit<T, U>) {
     // @ts-ignore
-    if (reqInit.__interceptorsId !== undefined && reqInit.__interceptorsId !== null) {
-      // @ts-ignore
-      this._interceptors.response.reject(reqInit.__interceptorsId)
+    const aborter: AbortSignal | undefined = reqInit.__aborter;
+    if (aborter?.aborted) {
+      throw new TimeoutError(
+        // @ts-ignore
+        aborter.reason ?? 'Timeout of exceeded',
+        'TimeoutError'
+      );
     }
   }
 
   private _clearTimeoutAutoAbort<T, U>(reqInit: AgentReqInit<T, U>) {
     // @ts-ignore
+    if (reqInit.__aborter) {
+      // @ts-ignore
+      delete reqInit.__aborter;
+    }
+    // @ts-ignore
     if (reqInit.__abortTimer !== undefined && reqInit.__abortTimer !== null) {
       // @ts-ignore
       clearTimeout(reqInit.__abortTimer);
-       // @ts-ignore
+      // @ts-ignore
       delete reqInit.__abortTimer;
     }
   }
 
-  private _checkResponseType(res: Response, responseType: ContentType|SupportedContentType|undefined): ContentType|SupportedContentType|undefined {
+  private _checkResponseType(
+    res: Response,
+    responseType: ContentType | SupportedContentType | undefined
+  ): ContentType | SupportedContentType | undefined {
     const responseTypeFromResponse = get_response_type(res);
-    if (!responseType && !responseTypeFromResponse) throw new Error("Agent: except a response type but null")
-    if (responseTypeFromResponse && responseType && responseTypeFromResponse !== responseType) {
-      throw new Error(`Agent: except a '${responseType}' response type but '${responseTypeFromResponse}'`)
+    if (!responseType && !responseTypeFromResponse)
+      throw new Error('Agent: except a response type but null');
+    if (
+      responseTypeFromResponse &&
+      responseType &&
+      responseTypeFromResponse !== responseType
+    ) {
+      throw new Error(
+        `Agent: except a '${responseType}' response type but '${responseTypeFromResponse}'`
+      );
     }
     return responseType || responseTypeFromResponse;
   }
 
-  private _decorateResponse<T, U>(init: AgentReqInit<T, U>, res: Response, data: T): AgentResponse<T, U> {
-    return  {
+  private _decorateResponse<T, U>(
+    init: AgentReqInit<T, U>,
+    res: Response,
+    data: T
+  ): AgentResponse<T, U> {
+    return {
       data: data,
       url: res.url,
       ok: res.ok,
@@ -552,20 +529,20 @@ class Agent {
       __init__: init,
       __agent__: this,
       __response__: res,
-    }
+    };
   }
 }
 
 const get_response_type = (res: Response): ContentType | undefined => {
-  const contentType = res.headers.get("content-type");
+  const contentType = res.headers.get('content-type');
 
   if (!contentType) return undefined;
-  if (contentType?.includes("application/json")) return ContentType.JSON;
-  if (contentType?.includes("text/plain")) return ContentType.TEXT;
-  if (contentType?.includes("text/html")) return ContentType.TEXT;
-  if (contentType?.includes("application/xml")) return ContentType.TEXT;
-  
-  return undefined
+  if (contentType?.includes('application/json')) return ContentType.JSON;
+  if (contentType?.includes('text/plain')) return ContentType.TEXT;
+  if (contentType?.includes('text/html')) return ContentType.TEXT;
+  if (contentType?.includes('application/xml')) return ContentType.TEXT;
+
+  return undefined;
 };
 
 const path_join = (...paths: (string | null | undefined)[]): string => {
@@ -579,15 +556,15 @@ const path_join = (...paths: (string | null | undefined)[]): string => {
       if (new RegExp(pre_reg).test(path)) {
         return path;
       }
-      return pre + "/" + path;
+      return pre + '/' + path;
     })
-    .replace(new RegExp(non_pre_reg, "gm"), "/");
+    .replace(new RegExp(non_pre_reg, 'gm'), '/');
 };
 
 function resolve_search_params(search?: string, data?: unknown): string {
   const q = new URLSearchParams(search);
   const b = new BodyParser(ContentType.FORM).marshal(data);
-  const q2 = new URLSearchParams("?" + b);
+  const q2 = new URLSearchParams('?' + b);
 
   q2.forEach((value, key) => {
     if (value !== undefined && value !== null) q.append(key, value);
