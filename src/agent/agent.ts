@@ -266,14 +266,16 @@ class Agent {
     } = reqInit.polling || {};
     if (pollingOn && interval) {
       const retry = () => {
-        setTimeout(() => { this.request<T, U>(reqInit) }, interval);
+        setTimeout(() => {
+          this._clearPolling<T, U>(reqInit);
+          this.request<T, U>(reqInit);
+        }, interval);
       }
 
       const interceptorsId = this._interceptors.response.use((res) => {
         if (Array.isArray(pollingOn) && pollingOn.includes(res.status)) {
           retry();
-        }
-        if (typeof pollingOn === 'function') {
+        } else if (typeof pollingOn === 'function') {
           try {
             Promise.resolve(pollingOn(null, res))
               .then((pollingOnRes) => {
@@ -284,7 +286,7 @@ class Agent {
           } catch (err) {
             throw err
           }
-        }
+        } 
         return res;
       }, (err) => {
         if (typeof pollingOn === 'function') {
@@ -299,6 +301,7 @@ class Agent {
             throw err
           }
         }
+        return err;
       })
 
       // @ts-ignore
@@ -408,37 +411,41 @@ class Agent {
       const wrappedFetch = (attempt: number) => {
         this._wrappedFetch(reqInit)
           .then((res) => {
-            if (attempt >= retryMaxTimes) resolve(res);
-            if (Array.isArray(retryOn) && retryOn.includes(res.status)) {
-              return retry<T, U>(attempt, null, res);
+            if (attempt >= retryMaxTimes) {
+              resolve(res);
+            } else if (Array.isArray(retryOn) && retryOn.includes(res.status)) {
+              retry<T, U>(attempt, null, res);
             } else if (typeof retryOn === 'function') {
               try {
-                return Promise.resolve(retryOn(attempt, null, res))
+                Promise.resolve(retryOn(attempt, null, res))
                   .then((retryOnRes) => {
-                    if(retryOnRes) return retry<T, U>(attempt, null, res);
-                    resolve(res);
+                    if(retryOnRes) retry<T, U>(attempt, null, res);
+                    else resolve(res);
                   }).catch(reject);
               } catch (err) {
                 reject(err);
               }
+            } else {
+              resolve(res);
             }
-            resolve(res);
           })
           .catch((err) => {
-            if (attempt >= retryMaxTimes) reject(err);
-            if (typeof retryOn === 'function') {
+            if (attempt >= retryMaxTimes) {
+              reject(err);
+            } else if (typeof retryOn === 'function') {
               try {
-                return Promise.resolve(retryOn(attempt, err, null))
+                Promise.resolve(retryOn(attempt, err, null))
                   .then((retryOnRes) => {
-                    if(retryOnRes) return retry<T, U>(attempt, err, null);
-                    reject(err);
+                    if(retryOnRes) retry<T, U>(attempt, err, null);
+                    else reject(err);
                   })
                   .catch(reject);
               } catch(err) {
                 reject(err);
               }
+            } else {
+              reject(err);
             }
-            reject(err);
           });
       };
 
@@ -503,12 +510,16 @@ class Agent {
       .finally(() => {
         this._clearTimeoutAutoAbort<T, U>(reqInit)
 
-        // @ts-ignore
-        if (reqInit.__interceptorsId !== undefined && reqInit.__interceptorsId !== null) {
-          // @ts-ignore
-          this._interceptors.response.reject(reqInit.__interceptorsId)
-        }
+        this._clearPolling<T, U>(reqInit);
       })
+  }
+
+  private _clearPolling<T, U>(reqInit: AgentReqInit<T, U>) {
+    // @ts-ignore
+    if (reqInit.__interceptorsId !== undefined && reqInit.__interceptorsId !== null) {
+      // @ts-ignore
+      this._interceptors.response.reject(reqInit.__interceptorsId)
+    }
   }
 
   private _clearTimeoutAutoAbort<T, U>(reqInit: AgentReqInit<T, U>) {

@@ -72,6 +72,7 @@ declare class Agent {
     private _handleInterceptors;
     private _dispatchFetch;
     private _wrappedFetch;
+    private _clearPolling;
     private _clearTimeoutAutoAbort;
     private _checkResponseType;
     private _decorateResponse;
