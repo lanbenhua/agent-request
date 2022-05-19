@@ -3,9 +3,10 @@ import InterceptorManager, {
   OnFulfilled,
   OnRejected,
 } from './interceptor-manager';
-import BodyParser from './body-parser';
 import Queue, { QueueTaskPriority } from '../queue';
+import BodyParser from './body-parser';
 import { TimeoutError } from './error';
+import { isNil } from './utils/is';
 
 const ContentTypeMap: Record<string, string | undefined | null> = {
   json: 'application/json; charset=utf-8',
@@ -17,6 +18,7 @@ const ContentTypeMap: Record<string, string | undefined | null> = {
 };
 
 type RetryInit<T, U> = {
+  retryInheritTimeout?: boolean;
   retryMaxTimes?: number;
   retryDelay?:
     | number
@@ -77,20 +79,17 @@ const DEFAULT_REQ_INIT: Partial<AgentReqInit<any, any>> = {};
 class Agent {
   private _fetch: Fetch;
   private _init?: AgentInit<any, any>;
-  private _queues?: Map<string, Queue>;
+  private _queueMap?: Map<string, Queue>;
   private _interceptors = {
     request: new InterceptorManager<AgentReqInit<any, any>>(),
     response: new InterceptorManager<AgentResponse<any, any>>(),
   };
 
-  public get fetch(): Fetch {
-    return this._fetch;
-  }
   public get init(): AgentInit<any, any> | undefined {
     return this._init;
   }
-  public get queues(): Map<string, Queue> | undefined {
-    return this._queues;
+  public get queueMap(): Map<string, Queue> | undefined {
+    return this._queueMap;
   }
   public get interceptors() {
     return this._interceptors;
@@ -105,16 +104,17 @@ class Agent {
 
     this._request = this._request.bind(this);
     this._wrappedFetch = this._wrappedFetch.bind(this);
+    this._handleInterceptors = this._handleInterceptors.bind(this);
   }
 
   public queue(name: string): Queue | undefined {
-    return this._queues?.get(name);
+    return this._queueMap?.get(name);
   }
 
   public request<T, U>(
     reqInit: AgentReqInit<T, U>
   ): Promise<AgentResponse<T, U>> {
-    if (this._queues) {
+    if (this._queueMap) {
       const queueName = reqInit.queue?.name ?? this._init?.queue?.defaultName;
       const queueConcurrency = this._init?.queue?.concurrency;
       const queue = this._createOrGetQueue(queueName, queueConcurrency);
@@ -146,11 +146,11 @@ class Agent {
     name: string = 'default',
     concurrency: number = 5
   ): Queue {
-    if (!this._queues) this._queues = new Map<string, Queue>();
+    if (!this._queueMap) this._queueMap = new Map<string, Queue>();
     const oldQueue = this.queue(name);
     if (oldQueue) return oldQueue;
     const newQueue = new Queue(concurrency);
-    this._queues.set(name, newQueue);
+    this._queueMap.set(name, newQueue);
     return newQueue;
   }
 
@@ -158,9 +158,11 @@ class Agent {
     reqInit: AgentReqInit<T, U>
   ): Promise<AgentResponse<T, U>> {
     // resolve reqInit
-    const reqInit2 = this._resolveReqInit<T, U>(reqInit);
-    // resolve timeout auto abort
-    this._resolveTimeoutAutoAbort<T, U>(reqInit2);
+    const reqInit2 = this._resolveTimeoutAutoAbort<T, U>(
+      this._resolveReqInit<T, U>(this._resolveInput<T, U>(reqInit))
+    );
+    // @ts-ignore
+    reqInit2.__origin_reqInit = reqInit;
 
     // handle request/response interceptors
     return this._dispatchFetch<T, U>(reqInit2)
@@ -170,6 +172,9 @@ class Agent {
       })
       .finally(() => {
         this._clearTimeoutAutoAbort<T, U>(reqInit2);
+
+        // @ts-ignore
+        if (reqInit2.__origin_reqInit) delete reqInit2.__origin_reqInit;
       });
   }
 
@@ -183,9 +188,6 @@ class Agent {
       timeout: reqInit.timeout ?? this._init?.timeout,
     };
 
-    // resolve input
-    reqInit2.url = this._resolveInput<T, U>(reqInit);
-
     if (this._init?.retry)
       reqInit2.retry = { ...this._init?.retry, ...reqInit.retry };
 
@@ -198,7 +200,6 @@ class Agent {
     // else handle the responsible content type according to the ContentTypeMap
     const reqContentType =
       reqInit?.contentType && ContentTypeMap[reqInit?.contentType];
-    console.log(`reqContentType`, reqContentType);
     reqInit2.headers = {
       ...DEFAULT_REQ_INIT.headers,
       ...(reqContentType ? { 'content-type': reqContentType } : null),
@@ -217,7 +218,7 @@ class Agent {
     return reqInit2;
   }
 
-  private _resolveInput<T, U>(reqInit: AgentReqInit<T, U>): string {
+  private _resolveInput<T, U>(reqInit: AgentReqInit<T, U>): AgentReqInit<T, U> {
     let url = path_join(reqInit?.base ?? this._init?.base, reqInit.input);
 
     // If the method is GET, we should merge the data of reqInit and url search
@@ -233,36 +234,44 @@ class Agent {
     }
 
     // update url after resolved
-    return url;
+    return {
+      ...reqInit,
+      url,
+    };
   }
 
-  private _resolveTimeoutAutoAbort<T, U>(reqInit: AgentReqInit<T, U>) {
-    const { timeout } = reqInit;
+  private _resolveTimeoutAutoAbort<T, U>(
+    reqInit: AgentReqInit<T, U>
+  ): AgentReqInit<T, U> {
+    const reqInit2 = { ...reqInit };
+    const { timeout } = reqInit2;
 
     // if no timeout or timeout equals 0, will return directly
-    if (!timeout) return;
+    if (!timeout) return reqInit2;
 
     // if the request init includes signal, the abort event will control by the outside
     // we do not need to do the auto abort any more.
-    if (reqInit.signal) return;
+    if (reqInit2.signal) return reqInit2;
 
     const controller = new AbortController();
 
     controller.signal.onabort = function abortHandler() {
       // @ts-ignore
-      reqInit.__aborter = this;
+      reqInit2.__aborter = this;
       controller.signal.onabort = null;
     };
 
-    reqInit.abortController = controller;
-    reqInit.signal = controller.signal;
+    reqInit2.abortController = controller;
+    reqInit2.signal = controller.signal;
 
     const timer = setTimeout(() => {
       controller.abort('Timeout of exceeded');
     }, timeout);
 
     // @ts-ignore
-    reqInit.__abortTimer = timer;
+    reqInit2.__abortTimer = timer;
+
+    return reqInit2;
   }
 
   private _dispatchFetch<T, U>(
@@ -272,6 +281,7 @@ class Agent {
       retryOn,
       retryMaxTimes = 2,
       retryDelay = 1000,
+      retryInheritTimeout = false,
     } = reqInit.retry || {};
 
     if (!retryOn) return this._handleInterceptors<T, U>(reqInit);
@@ -286,7 +296,11 @@ class Agent {
           return reject(err);
         }
 
-        this._handleInterceptors<T, U>(reqInit)
+        (retryInheritTimeout
+          ? this._handleInterceptors<T, U>(reqInit)
+          : // @ts-ignore
+            this.request<T, U>(reqInit.__origin_reqInit ?? reqInit)
+        )
           .then((res) => {
             if (attempt >= retryMaxTimes) return resolve(res);
             if (Array.isArray(retryOn) && retryOn.includes(res.status))
@@ -487,7 +501,7 @@ class Agent {
       delete reqInit.__aborter;
     }
     // @ts-ignore
-    if (reqInit.__abortTimer !== undefined && reqInit.__abortTimer !== null) {
+    if (!isNil(reqInit.__abortTimer)) {
       // @ts-ignore
       clearTimeout(reqInit.__abortTimer);
       // @ts-ignore

@@ -4,11 +4,11 @@ class AbortManager {
   constructor() {}
 
   public signal(id: string): AbortSignal | undefined {
-    return this._d.get(id)?.signal
+    return this._d.get(id)?.signal;
   }
 
   public isAborted(id: string): boolean {
-    return this.signal(id)?.aborted ?? true
+    return this.signal(id)?.aborted ?? true;
   }
 
   public abort(id: string, reason?: string) {
@@ -26,7 +26,7 @@ class AbortManager {
   }
 
   public clear() {
-    this._d.clear()
+    this._d.clear();
   }
 }
 

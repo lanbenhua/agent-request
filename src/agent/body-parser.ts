@@ -1,6 +1,6 @@
-import { stringify } from "./utils/json";
-import {isNil, isPlainObject } from './utils/is';
-import { ContentType, SupportedContentType } from "./type";
+import { stringify } from './utils/json';
+import { isNil, isPlainObject } from './utils/is';
+import { ContentType, SupportedContentType } from './type';
 
 class BodyParser {
   private _contentType?: ContentType | SupportedContentType;
@@ -13,29 +13,31 @@ class BodyParser {
   public marshal(body: any): BodyInit | null | undefined {
     const { _contentType } = this;
 
-    
-    if (_contentType === ContentType.FORMDATA) 
-      return formdataencode(body)
+    if (_contentType === ContentType.FORMDATA) return formdataencode(body);
 
-    if (_contentType === ContentType.JSON) 
+    if (_contentType === ContentType.JSON)
       return typeof body === 'string' ? body : stringify(body);
 
-    if (_contentType === ContentType.FORM) 
-      return formurlencode(body);
+    if (_contentType === ContentType.FORM) return formurlencode(body);
 
     if (_contentType === ContentType.BLOB) {
-      if (!(body instanceof Blob)) throw new Error("BodyParser: must be a blob when content type is blob")
+      if (!(body instanceof Blob))
+        throw new Error('BodyParser: must be a blob when content type is blob');
       return body;
     }
 
     if (_contentType === ContentType.BUFFER) {
-      if (!(body instanceof ArrayBuffer)) throw new Error("BodyParser: must be a arraybuffer when content type is arraybuffer")
+      if (!(body instanceof ArrayBuffer))
+        throw new Error(
+          'BodyParser: must be a arraybuffer when content type is arraybuffer'
+        );
       return body;
     }
 
-    if (_contentType === ContentType.TEXT) return typeof body === 'string' ? body : stringify(body);
-    
-    return body
+    if (_contentType === ContentType.TEXT)
+      return typeof body === 'string' ? body : stringify(body);
+
+    return body;
   }
 }
 
@@ -45,7 +47,7 @@ function formdataencode(obj: any): FormData {
 
   const formdata = new FormData();
 
-  if (isPlainObject(obj)) 
+  if (isPlainObject(obj))
     Object.entries(obj as {}).forEach(([key, value]) => {
       if (isNil(value)) return;
       if (Array.isArray(value)) {
@@ -54,14 +56,14 @@ function formdataencode(obj: any): FormData {
         });
       }
       formdata.append(key, searchParamsStringify(value));
-    })
+    });
 
-  if (typeof obj === 'string') 
+  if (typeof obj === 'string')
     new URLSearchParams(obj).forEach((v, k) => {
-      formdata.append(k, v)
-    })
+      formdata.append(k, v);
+    });
 
-  return formdata
+  return formdata;
 }
 
 function marshalObj(obj: {}): string {
@@ -84,28 +86,27 @@ function marshalObj(obj: {}): string {
 function formurlencode(obj: any): string {
   if (typeof obj === 'string') return obj;
   if (obj instanceof URLSearchParams) return obj.toString();
-  if (isPlainObject(obj)) return marshalObj(obj)
+  if (isPlainObject(obj)) return marshalObj(obj);
 
   if (obj instanceof FormData) {
     // eslint-disable-next-line
-    const draftObj: Record<string, any> = {}
+    const draftObj: Record<string, any> = {};
     obj.forEach((value, key) => {
       draftObj[key] = value;
-    })
-    return marshalObj(draftObj)
+    });
+    return marshalObj(draftObj);
   }
 
-  return ""
+  return '';
 }
 // eslint-disable-next-line
 function searchParamsStringify(obj: any): string {
-  if (isNil(obj)) return "";
-  if (typeof obj === "string") return obj;
-  if (typeof obj === "number") return String(obj);
-  if (typeof obj === "boolean") return String(obj);
+  if (isNil(obj)) return '';
+  if (typeof obj === 'string') return obj;
+  if (typeof obj === 'number') return String(obj);
+  if (typeof obj === 'boolean') return String(obj);
 
   return stringify(obj);
 }
-
 
 export default BodyParser;
