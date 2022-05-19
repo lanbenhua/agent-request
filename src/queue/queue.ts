@@ -24,23 +24,23 @@ class Queue {
     this.reconcurrency(concurrency);
   }
 
-  public getSize(): number {
+  public get size(): number {
     return this._queue.length;
   }
 
-  public getConcurrency(): number {
+  public get concurrency(): number {
     return this._concurrency;
   }
 
-  public getOptions(): QueueOptions | undefined {
+  public get options(): QueueOptions | undefined {
     return this._options;
   }
 
-  public getPending(): number {
+  public get pending(): number {
     return this._pending;
   }
 
-  public getIsPaused(): boolean {
+  public get isPaused(): boolean {
     return this._isPaused;
   }
 
@@ -92,7 +92,7 @@ class Queue {
 
   protected _check<T>() {
     if (this._isPaused) return;
-    if (this._pending >= this.getSize()) return;
+    if (this._pending >= this.size) return;
     if (this._queue.length < 1) return;
 
     this._run<T>();

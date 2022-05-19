@@ -85,13 +85,13 @@ class Agent {
     response: new InterceptorManager<AgentResponse<any, any>>(),
   };
 
-  public getInit(): AgentInit<any, any> | undefined {
+  public get init(): AgentInit<any, any> | undefined {
     return this._init;
   }
-  public getQueueMap(): Map<string, Queue> | undefined {
+  public get queueMap(): Map<string, Queue> | undefined {
     return this._queueMap;
   }
-  public getInterceptors() {
+  public get interceptors() {
     return this._interceptors;
   }
 
@@ -213,7 +213,8 @@ class Agent {
         ? undefined
         : reqInit.body !== undefined && reqInit.body !== null
         ? reqInit.body
-        : new BodyParser(reqInit?.contentType).marshal(reqInit.data);
+        : new BodyParser(reqInit?.contentType).marshal(reqInit.data) ??
+          undefined;
 
     return reqInit2;
   }

@@ -49,9 +49,9 @@ declare class Agent {
     private _init?;
     private _queueMap?;
     private _interceptors;
-    getInit(): AgentInit<any, any> | undefined;
-    getQueueMap(): Map<string, Queue> | undefined;
-    getInterceptors(): {
+    get init(): AgentInit<any, any> | undefined;
+    get queueMap(): Map<string, Queue> | undefined;
+    get interceptors(): {
         request: InterceptorManager<AgentReqInit<any, any>>;
         response: InterceptorManager<AgentResponse<any, any>>;
     };

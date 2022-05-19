@@ -6,11 +6,11 @@ declare class Queue {
     private _concurrency;
     private _queue;
     constructor(concurrency: number, options?: QueueOptions);
-    getSize(): number;
-    getConcurrency(): number;
-    getOptions(): QueueOptions | undefined;
-    getPending(): number;
-    getIsPaused(): boolean;
+    get size(): number;
+    get concurrency(): number;
+    get options(): QueueOptions | undefined;
+    get pending(): number;
+    get isPaused(): boolean;
     pause(): void;
     resume(): void;
     reconcurrency(concurrency: number): void;

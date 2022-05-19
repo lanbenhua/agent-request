@@ -1,26 +1,30 @@
-import { RollupOptions } from "rollup";
+import { RollupOptions } from 'rollup';
 import { nodeResolve } from '@rollup/plugin-node-resolve';
 
 // rollup.config.js (building more than one bundle)
 const path = require('path');
 const rollupTypescript = require('@rollup/plugin-typescript');
-const terser = require("rollup-plugin-terser").terser;
+const terser = require('rollup-plugin-terser').terser;
 
-const cwd = (pathname: string): string => path.resolve(process.cwd(), pathname)
+const cwd = (pathname: string): string => path.resolve(process.cwd(), pathname);
 
 const config: RollupOptions[] = [
   {
-    input: cwd('./src/index.ts'), 
-    plugins: [nodeResolve(), rollupTypescript({
-      tsconfig: cwd('./tsconfig.esm.json')
-    }), terser()],
+    input: cwd('./src/index.ts'),
+    plugins: [
+      nodeResolve(),
+      rollupTypescript({
+        tsconfig: cwd('./tsconfig.esm.json'),
+      }),
+      terser(),
+    ],
     output: {
       dir: cwd('./esm'),
-      format: "es"
-    }
+      format: 'es',
+    },
   },
   // {
-  //   input: cwd('./src/index.ts'), 
+  //   input: cwd('./src/index.ts'),
   //   plugins: [nodeResolve(), rollupTypescript({
   //     tsconfig: cwd('./tsconfig.esm.es6.json')
   //   })],
@@ -30,19 +34,23 @@ const config: RollupOptions[] = [
   //   }
   // },
   {
-    input: cwd('./src/index.ts'), 
-    plugins: [nodeResolve(), rollupTypescript({
-      tsconfig: cwd('./tsconfig.umd.json')
-    }), terser()],
+    input: cwd('./src/index.ts'),
+    plugins: [
+      nodeResolve(),
+      rollupTypescript({
+        tsconfig: cwd('./tsconfig.umd.json'),
+      }),
+      terser(),
+    ],
     output: {
       dir: cwd('./lib'),
-      format: "umd",
+      format: 'umd',
       name: 'Agent',
-      exports: "named"
-    }
+      exports: 'named',
+    },
   },
   // {
-  //   input: cwd('./src/index.ts'), 
+  //   input: cwd('./src/index.ts'),
   //   plugins: [nodeResolve(), rollupTypescript({
   //     tsconfig: cwd('./tsconfig.umd.es6.json')
   //   })],

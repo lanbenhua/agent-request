@@ -9,7 +9,7 @@ class Polling<T = unknown> {
     this._init = init;
   }
 
-  public getInit(): PollingInit<T> {
+  public get init(): PollingInit<T> {
     return this._init;
   }
 
