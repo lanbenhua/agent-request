@@ -2,6 +2,7 @@ import { SupportedContentType, ContentType } from './type';
 import InterceptorManager from './interceptor-manager';
 import Queue, { QueueTaskPriority } from '../queue';
 declare type RetryInit<T, U> = {
+    retryInheritTimeout?: boolean;
     retryMaxTimes?: number;
     retryDelay?: number | ((attempt: number, error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => number);
     retryOn?: number[] | ((attempt: number, error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => boolean | Promise<boolean>);
@@ -46,12 +47,11 @@ export interface AgentResponse<T, U> {
 declare class Agent {
     private _fetch;
     private _init?;
-    private _queues?;
+    private _queueMap?;
     private _interceptors;
-    get fetch(): Fetch;
-    get init(): AgentInit<any, any> | undefined;
-    get queues(): Map<string, Queue> | undefined;
-    get interceptors(): {
+    getInit(): AgentInit<any, any> | undefined;
+    getQueueMap(): Map<string, Queue> | undefined;
+    getInterceptors(): {
         request: InterceptorManager<AgentReqInit<any, any>>;
         response: InterceptorManager<AgentResponse<any, any>>;
     };

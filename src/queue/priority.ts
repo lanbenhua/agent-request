@@ -1,5 +1,5 @@
-import { isNil } from './utils'
-import { QueueTaskPriority } from './type'
+import { isNil } from './utils';
+import { QueueTaskPriority } from './type';
 
 class Priority {
   _priority?: QueueTaskPriority | null = 0;

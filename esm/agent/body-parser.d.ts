@@ -1,4 +1,4 @@
-import { ContentType, SupportedContentType } from "./type";
+import { ContentType, SupportedContentType } from './type';
 declare class BodyParser {
     private _contentType?;
     constructor(contentType?: ContentType | SupportedContentType);

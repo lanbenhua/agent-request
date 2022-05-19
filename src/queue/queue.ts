@@ -3,8 +3,8 @@ import Priority from './priority';
 import { CustomCancelError } from './error';
 
 const DEFAULT_QUEUE_OPTIONS: QueueOptions = {
-  auto: true
-}
+  auto: true,
+};
 
 class Queue {
   private _options?: QueueOptions;
@@ -16,31 +16,31 @@ class Queue {
   constructor(concurrency: number, options?: QueueOptions) {
     this._queue = [];
     this._pending = 0;
-    this._options = {...DEFAULT_QUEUE_OPTIONS, ...options};
+    this._options = { ...DEFAULT_QUEUE_OPTIONS, ...options };
 
-    this._resolve = this._resolve.bind(this)
-    this._reject = this._reject.bind(this)
+    this._resolve = this._resolve.bind(this);
+    this._reject = this._reject.bind(this);
 
     this.reconcurrency(concurrency);
   }
 
-  public get size(): number {
+  public getSize(): number {
     return this._queue.length;
   }
 
-  public get concurrency(): number {
+  public getConcurrency(): number {
     return this._concurrency;
   }
 
-  public get options(): QueueOptions | undefined {
+  public getOptions(): QueueOptions | undefined {
     return this._options;
   }
 
-  public get pending(): number {
+  public getPending(): number {
     return this._pending;
   }
 
-  public get isPaused(): boolean {
+  public getIsPaused(): boolean {
     return this._isPaused;
   }
 
@@ -61,7 +61,7 @@ class Queue {
 
     if (this._options?.auto) {
       // Trigger queued items if queue became bigger
-      this._check();    
+      this._check();
     }
   }
 
@@ -74,13 +74,14 @@ class Queue {
         ...task,
         runner,
         resolve,
-        reject
+        reject,
       };
       this._push<T>(queueItem);
-    })
-    .then(this._resolve, this._reject)
+    }).then(this._resolve, this._reject);
 
-    promise.cancel = () => { this._cancel<T>(queueItem) }
+    promise.cancel = () => {
+      this._cancel<T>(queueItem);
+    };
 
     return promise;
   }
@@ -91,7 +92,7 @@ class Queue {
 
   protected _check<T>() {
     if (this._isPaused) return;
-    if (this._pending >= this.size) return;
+    if (this._pending >= this.getSize()) return;
     if (this._queue.length < 1) return;
 
     this._run<T>();
@@ -102,7 +103,7 @@ class Queue {
 
   protected _cancel<T>(task: QueueItem<T>) {
     const { reject } = task;
-    reject(new CustomCancelError("Canceled", 'QueueCancelError'))
+    reject(new CustomCancelError('Canceled', 'QueueCancelError'));
   }
 
   protected _run<T>() {
@@ -117,7 +118,12 @@ class Queue {
   }
 
   protected _push<T>(task: QueueItem<T>) {
-    this._queue = this._queue.concat(task).sort((a, b) => new Priority(b.priority).num() - new Priority(a.priority).num())
+    this._queue = this._queue
+      .concat(task)
+      .sort(
+        (a, b) =>
+          new Priority(b.priority).num() - new Priority(a.priority).num()
+      );
 
     this._check();
   }
@@ -142,4 +148,4 @@ class Queue {
   }
 }
 
-export default Queue
+export default Queue;

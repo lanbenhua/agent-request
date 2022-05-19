@@ -85,13 +85,13 @@ class Agent {
     response: new InterceptorManager<AgentResponse<any, any>>(),
   };
 
-  public get init(): AgentInit<any, any> | undefined {
+  public getInit(): AgentInit<any, any> | undefined {
     return this._init;
   }
-  public get queueMap(): Map<string, Queue> | undefined {
+  public getQueueMap(): Map<string, Queue> | undefined {
     return this._queueMap;
   }
-  public get interceptors() {
+  public getInterceptors() {
     return this._interceptors;
   }
 

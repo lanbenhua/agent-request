@@ -8,6 +8,4 @@ class TimeoutError extends CustomError {
   }
 }
 
-export {
-  TimeoutError
-}
+export { TimeoutError };
