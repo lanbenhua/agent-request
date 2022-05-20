@@ -1,4 +1,4 @@
-import { QueueOptions, QueueItem, QueueTask, QueuePromise } from './type';
+import { QueueOptions, QueueItem, QueueTask, CancelablePromise } from './type';
 import Priority from './priority';
 import { CustomCancelError } from './error';
 
@@ -65,11 +65,11 @@ class Queue {
     }
   }
 
-  public enqueue<T = unknown>(task: QueueTask<T>): QueuePromise<T> {
+  public enqueue<T = unknown>(task: QueueTask<T>): CancelablePromise<T> {
     const { runner } = task;
 
     let queueItem: QueueItem<T>;
-    const promise: QueuePromise<T> = new Promise<T>((resolve, reject) => {
+    const promise: CancelablePromise<T> = new Promise<T>((resolve, reject) => {
       queueItem = {
         ...task,
         runner,
