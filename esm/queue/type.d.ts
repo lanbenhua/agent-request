@@ -12,6 +12,6 @@ export declare type QueueItem<T> = QueueTask<T> & {
 export declare type QueueOptions = {
     auto?: boolean;
 };
-export interface QueuePromise<T> extends Promise<T> {
+export interface CancelablePromise<T> extends Promise<T> {
     cancel?: () => void;
 }

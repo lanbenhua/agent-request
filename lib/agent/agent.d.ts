@@ -2,9 +2,8 @@ import { SupportedContentType, ContentType } from './type';
 import InterceptorManager from './interceptor-manager';
 import Queue, { QueueTaskPriority } from '../queue';
 declare type RetryInit<T, U> = {
-    retryInheritTimeout?: boolean;
-    retryMaxTimes?: number;
-    retryDelay?: number | ((attempt: number, error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => number);
+    maxTimes?: number;
+    delay?: number | ((attempt: number, error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => number);
     retryOn?: number[] | ((attempt: number, error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => boolean | Promise<boolean>);
 };
 declare type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
@@ -60,11 +59,11 @@ declare class Agent {
     request<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>>;
     private _initQueues;
     private _createOrGetQueue;
+    private _queueRequest;
     private _request;
     private _resolveReqInit;
     private _resolveInput;
     private _resolveTimeoutAutoAbort;
-    private _dispatchFetch;
     private _handleInterceptors;
     private _wrappedFetch;
     private _checkAborter;

@@ -1,4 +1,4 @@
-import { QueueOptions, QueueItem, QueueTask, QueuePromise } from './type';
+import { QueueOptions, QueueItem, QueueTask, CancelablePromise } from './type';
 declare class Queue {
     private _options?;
     private _isPaused;
@@ -14,7 +14,7 @@ declare class Queue {
     pause(): void;
     resume(): void;
     reconcurrency(concurrency: number): void;
-    enqueue<T = unknown>(task: QueueTask<T>): QueuePromise<T>;
+    enqueue<T = unknown>(task: QueueTask<T>): CancelablePromise<T>;
     dequeue<T = unknown>(): void;
     protected _check<T>(): void;
     protected _cancel<T>(task: QueueItem<T>): void;
