@@ -24,6 +24,7 @@ var globalNS = (function() {
 // being exposed by browsers for legacy reasons.
 // https://github.com/taylorhakes/promise-polyfill/issues/114
 if (typeof globalNS['Promise'] !== 'function') {
+  // @ts-ignore
   globalNS['Promise'] = Promise;
 } else {
   if (!globalNS.Promise.prototype['finally']) {

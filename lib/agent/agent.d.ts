@@ -1,55 +1,13 @@
-import { SupportedContentType, ContentType, CancelablePromise } from './type';
+import Queue from './queue';
 import InterceptorManager from './interceptor-manager';
-import Queue, { QueueTaskPriority } from './queue';
-declare type RetryInit<T, U> = {
-    maxTimes?: number;
-    delay?: number | ((attempt: number, error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => number);
-    retryOn?: number[] | ((attempt: number, error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => boolean | Promise<boolean>);
-};
-declare type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
-export declare type AgentInit<T, U> = {
-    base?: string;
-    timeout?: number;
-    queue?: {
-        concurrency?: number;
-        defaultName?: string;
-        concurrencies?: Record<string, number>;
-    };
-    retry?: RetryInit<T, U>;
-};
-export declare type AgentReqInit<T, U> = RequestInit & {
-    input: string;
-    url?: string;
-    base?: string;
-    data?: U;
-    timeout?: number;
-    abortController?: AbortController;
-    queue?: {
-        name?: string;
-        priority?: number | QueueTaskPriority;
-    };
-    retry?: RetryInit<T, U>;
-    contentType?: ContentType | SupportedContentType;
-    responseType?: ContentType | SupportedContentType;
-};
-export interface AgentResponse<T, U> {
-    url: string;
-    data: T | undefined;
-    ok: boolean;
-    status: number;
-    statusText: string;
-    headers: Response['headers'];
-    __init__: AgentReqInit<T, U> | undefined;
-    __agent__: Agent;
-    __response__: Response;
-}
+import { Fetch, CancelablePromise, AgentInit, AgentReqInit, AgentResponse } from './type';
 declare class Agent {
     private _fetch;
     private _init?;
-    private _queueMap?;
+    private _queueMap;
     private _interceptors;
-    get init(): AgentInit<any, any> | undefined;
-    get queueMap(): Map<string, Queue> | undefined;
+    get init(): AgentInit<any, any>;
+    get queueMap(): Map<string, Queue>;
     get interceptors(): {
         request: InterceptorManager<AgentReqInit<any, any>>;
         response: InterceptorManager<AgentResponse<any, any>>;
@@ -58,7 +16,6 @@ declare class Agent {
     queue(name: string): Queue | undefined;
     request<T, U>(reqInit: AgentReqInit<T, U>): CancelablePromise<AgentResponse<T, U>>;
     private _initQueues;
-    private _createOrGetQueue;
     private _queueRequest;
     private _request;
     private _resolveReqInit;

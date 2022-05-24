@@ -1,6 +1,5 @@
 import Agent from "./agent";
 import { QueueTaskPriority } from "./queue";
-import { RetryInit } from "./retry/type";
 
 export type SupportedContentType =
   | 'json'
@@ -29,6 +28,8 @@ export const enum Method {
   OPTIONS = 'OPTIONS',
 }
 
+export type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
+
 export interface CancelablePromise<T> extends Promise<T> {
   cancel?: (reason?: any) => void;
 }
@@ -51,9 +52,7 @@ export interface AgentRetryInit<T, U> {
       ) => boolean | Promise<boolean>);
 };
 
-export type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
-
-export type AgentInit<T, U> = {
+export interface AgentInit<T, U> {
   base?: string;
   timeout?: number;
   queue?: {
@@ -64,7 +63,7 @@ export type AgentInit<T, U> = {
   retry?: AgentRetryInit<T, U>;
 };
 
-export type AgentReqInit<T, U> = RequestInit & {
+export interface AgentReqInit<T, U> extends RequestInit {
   input: string;
   url?: string;
   base?: string;

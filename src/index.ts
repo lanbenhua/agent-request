@@ -1,10 +1,10 @@
-import Promise from 'promise-polyfill';
-import { fetch } from 'whatwg-fetch/fetch';
+// import Promise from './promise';
+// import { fetch } from './fetch';
 
-import Agent from './agent';
+// export { Promise, fetch };
 
 export * from './agent';
 
-export { Promise, fetch };
+import Agent from './agent';
 
 export default Agent;

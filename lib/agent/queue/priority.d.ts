@@ -1,6 +1,6 @@
 import { QueueTaskPriority } from './type';
 declare class Priority {
-    _priority?: QueueTaskPriority | null;
+    private _priority?;
     constructor(priority?: QueueTaskPriority | null);
     num(): number;
 }

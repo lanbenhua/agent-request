@@ -1,6 +1,18 @@
-import { CustomError } from './queue';
+declare class CustomError extends Error {
+    custom: boolean;
+    type: string;
+    constructor(message?: string, type?: string, name?: string);
+    toString(ecode?: number): string;
+}
+declare class CustomCancelError extends CustomError {
+    type: string;
+    constructor(message?: string, name?: string);
+}
 declare class TimeoutError extends CustomError {
     type: string;
     constructor(message?: string, name?: string);
 }
-export { TimeoutError };
+declare function isCustomError(err: CustomError): boolean;
+declare function isCustomCancelError(err: CustomError): boolean;
+declare function isCustomTimeoutError(err: CustomError): boolean;
+export { CustomError, CustomCancelError, TimeoutError, isCustomError, isCustomCancelError, isCustomTimeoutError };

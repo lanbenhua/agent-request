@@ -1,6 +1,6 @@
 import { QueueOptions, QueueItem, QueueTask } from './type';
 import Priority from './priority';
-import { CustomCancelError } from './error';
+import { CustomCancelError } from '../error';
 import { CancelablePromise } from '../type';
 
 const DEFAULT_QUEUE_OPTIONS: QueueOptions = {

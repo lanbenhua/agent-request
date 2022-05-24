@@ -5,6 +5,7 @@ import Polling from './polling';
 
 export * from './agent';
 export * from './type';
+export * from './error';
 export * from './queue/type';
 export * from './retry/type';
 export * from './polling/type';

@@ -8,7 +8,7 @@ export type QueueTaskPriority =
   | 'LOW'
   | 'LOWEST';
 
-export type QueueOptions = {
+export interface QueueOptions {
   auto?: boolean;
 };
   
