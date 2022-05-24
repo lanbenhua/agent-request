@@ -1,4 +1,4 @@
-import { isNil } from './utils';
+import { isNil } from '../utils/is';
 import { QueueTaskPriority } from './type';
 
 class Priority {

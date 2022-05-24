@@ -1,6 +1,6 @@
-import { SupportedContentType, ContentType } from './type';
+import { SupportedContentType, ContentType, CancelablePromise } from './type';
 import InterceptorManager from './interceptor-manager';
-import Queue, { QueueTaskPriority } from '../queue';
+import Queue, { QueueTaskPriority } from './queue';
 declare type RetryInit<T, U> = {
     maxTimes?: number;
     delay?: number | ((attempt: number, error: Error | null | undefined, response: AgentResponse<T, U> | null | undefined) => number);
@@ -56,7 +56,7 @@ declare class Agent {
     };
     constructor(fetch: Fetch, init?: AgentInit<any, any>);
     queue(name: string): Queue | undefined;
-    request<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>>;
+    request<T, U>(reqInit: AgentReqInit<T, U>): CancelablePromise<AgentResponse<T, U>>;
     private _initQueues;
     private _createOrGetQueue;
     private _queueRequest;

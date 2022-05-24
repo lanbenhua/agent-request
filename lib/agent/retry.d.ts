@@ -1,13 +1,10 @@
-declare type RetryCancel = () => void;
+import { CancelablePromise } from './type';
 declare type RetryRunner<T> = () => Promise<T>;
 declare type RetryInit<T> = {
     maxTimes?: number;
     delay?: number | ((attempt: number, error: Error | null | undefined, response: T | null | undefined) => number);
     retryOn?: (attempt: number, error: Error | null | undefined, response: T | null | undefined) => boolean | Promise<boolean>;
 };
-export interface CancelablePromise<T> extends Promise<T> {
-    cancel?: RetryCancel;
-}
 declare class Retry<T> {
     private __attempt;
     private __canceled?;

@@ -1,4 +1,4 @@
-export declare type SupportedContentType = "json" | "form" | "text" | "buffer" | "blob" | "formdata";
+export declare type SupportedContentType = 'json' | 'form' | 'text' | 'buffer' | 'blob' | 'formdata';
 export declare const enum ContentType {
     JSON = "json",
     FORM = "form",
@@ -15,4 +15,7 @@ export declare const enum Method {
     PATCH = "PATCH",
     HEAD = "HEAD",
     OPTIONS = "OPTIONS"
+}
+export interface CancelablePromise<T> extends Promise<T> {
+    cancel?: (reason?: any) => void;
 }

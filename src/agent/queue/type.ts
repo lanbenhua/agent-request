@@ -1,5 +1,4 @@
-export type Runner<T> = () => Promise<T>;
-export type Kill = () => boolean;
+export type QueueRunner<T> = () => Promise<T>;
 export type QueueTaskPriority =
   | number
   | 'HIGHEST'
@@ -8,7 +7,7 @@ export type QueueTaskPriority =
   | 'LOW'
   | 'LOWEST';
 export type QueueTask<T> = {
-  runner: Runner<T>;
+  runner: QueueRunner<T>;
   priority?: QueueTaskPriority | null;
 };
 export type QueueItem<T> = QueueTask<T> & {
@@ -18,6 +17,3 @@ export type QueueItem<T> = QueueTask<T> & {
 export type QueueOptions = {
   auto?: boolean;
 };
-export interface CancelablePromise<T> extends Promise<T> {
-  cancel?: () => void;
-}

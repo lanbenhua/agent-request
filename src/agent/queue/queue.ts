@@ -1,6 +1,7 @@
-import { QueueOptions, QueueItem, QueueTask, CancelablePromise } from './type';
+import { QueueOptions, QueueItem, QueueTask } from './type';
 import Priority from './priority';
 import { CustomCancelError } from './error';
+import { CancelablePromise } from '../type';
 
 const DEFAULT_QUEUE_OPTIONS: QueueOptions = {
   auto: true,
@@ -68,7 +69,7 @@ class Queue {
   public enqueue<T = unknown>(task: QueueTask<T>): CancelablePromise<T> {
     const { runner } = task;
 
-    let queueItem: QueueItem<T>;
+    let queueItem: QueueItem<T> | undefined;
     const promise: CancelablePromise<T> = new Promise<T>((resolve, reject) => {
       queueItem = {
         ...task,
@@ -80,7 +81,7 @@ class Queue {
     }).then(this._resolve, this._reject);
 
     promise.cancel = () => {
-      this._cancel<T>(queueItem);
+      queueItem && this._cancel<T>(queueItem);
     };
 
     return promise;

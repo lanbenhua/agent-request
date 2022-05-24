@@ -1,22 +1,6 @@
-import { CancelablePromise } from './type';
-import { isNil } from './utils/is';
-
-type RetryRunner<T> = () => Promise<T>;
-type RetryInit<T> = {
-  maxTimes?: number;
-  delay?:
-    | number
-    | ((
-        attempt: number,
-        error: Error | null | undefined,
-        response: T | null | undefined
-      ) => number);
-  retryOn?: (
-    attempt: number,
-    error: Error | null | undefined,
-    response: T | null | undefined
-  ) => boolean | Promise<boolean>;
-};
+import { CancelablePromise } from '../type';
+import { isNil } from '../utils/is';
+import { RetryInit, RetryRunner } from './type';
 
 class Retry<T> {
   private __attempt: number = 0;

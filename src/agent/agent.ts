@@ -1,9 +1,14 @@
-import { Method, SupportedContentType, ContentType } from './type';
+import {
+  Method,
+  SupportedContentType,
+  ContentType,
+  CancelablePromise,
+} from './type';
 import InterceptorManager, {
   OnFulfilled,
   OnRejected,
 } from './interceptor-manager';
-import Queue, { QueueTaskPriority } from '../queue';
+import Queue, { QueueTaskPriority } from './queue';
 import BodyParser from './body-parser';
 import { TimeoutError } from './error';
 import { isNil } from './utils/is';
@@ -19,7 +24,6 @@ const ContentTypeMap: Record<string, string | undefined | null> = {
 };
 
 type RetryInit<T, U> = {
-  // inheritTimeout?: boolean;
   maxTimes?: number;
   delay?:
     | number
@@ -115,22 +119,24 @@ class Agent {
 
   public request<T, U>(
     reqInit: AgentReqInit<T, U>
-  ): Promise<AgentResponse<T, U>> {
+  ): CancelablePromise<AgentResponse<T, U>> {
     const retryInit =
-      reqInit.retry || this._init?.retry
+      this._init?.retry || reqInit.retry
         ? { ...this._init?.retry, ...reqInit.retry }
         : null;
+
     if (retryInit) {
+      const { retryOn } = retryInit;
       const retry = new Retry<AgentResponse<T, U>>(
         () => this._queueRequest(reqInit),
         {
           ...retryInit,
-          retryOn: retryInit?.retryOn
+          retryOn: retryOn
             ? (attempt, err, res) => {
-                if (Array.isArray(retryInit?.retryOn)) {
-                  return !!(res && retryInit?.retryOn.includes(res?.status));
+                if (Array.isArray(retryOn)) {
+                  return !!(res && retryOn.includes(res?.status));
                 }
-                return retryInit?.retryOn?.(attempt, err, res) ?? false;
+                return retryOn?.(attempt, err, res) ?? false;
               }
             : undefined,
         }
@@ -171,7 +177,7 @@ class Agent {
 
   private _queueRequest<T, U>(
     reqInit: AgentReqInit<T, U>
-  ): Promise<AgentResponse<T, U>> {
+  ): CancelablePromise<AgentResponse<T, U>> {
     if (this._queueMap) {
       const queueName = reqInit.queue?.name ?? this._init?.queue?.defaultName;
       const queueConcurrency = this._init?.queue?.concurrency;
@@ -187,26 +193,24 @@ class Agent {
 
   private _request<T, U>(
     reqInit: AgentReqInit<T, U>
-  ): Promise<AgentResponse<T, U>> {
+  ): CancelablePromise<AgentResponse<T, U>> {
     // resolve reqInit
-    const reqInit2 = this._resolveTimeoutAutoAbort<T, U>(
+    const resolvedReqInit = this._resolveTimeoutAutoAbort<T, U>(
       this._resolveReqInit<T, U>(this._resolveInput<T, U>(reqInit))
     );
-    // @ts-ignore
-    reqInit2.__origin_reqInit = reqInit;
-
-    // handle request/response interceptors
-    return this._handleInterceptors<T, U>(reqInit2)
+    const promise = this._handleInterceptors<T, U>(resolvedReqInit)
       .catch((err) => {
-        this._checkAborter<T, U>(reqInit2);
+        this._checkAborter<T, U>(resolvedReqInit);
         throw err;
       })
       .finally(() => {
-        this._clearTimeoutAutoAbort<T, U>(reqInit2);
-
-        // @ts-ignore
-        if (reqInit2.__origin_reqInit) delete reqInit2.__origin_reqInit;
+        this._clearTimeoutAutoAbort<T, U>(resolvedReqInit);
       });
+    // @ts-ignore
+    promise.cancel = (reason?: any) => {
+      resolvedReqInit.abortController?.abort(reason);
+    };
+    return promise;
   }
 
   private _resolveReqInit<T, U>(
@@ -278,30 +282,30 @@ class Agent {
     const reqInit2 = { ...reqInit };
     const { timeout } = reqInit2;
 
-    // if no timeout or timeout equals 0, will return directly
-    if (!timeout) return reqInit2;
-
     // if the request init includes signal, the abort event will control by the outside
     // we do not need to do the auto abort any more.
-    if (reqInit2.signal) return reqInit2;
 
-    const controller = new AbortController();
-
-    controller.signal.onabort = function abortHandler() {
+    let controller: AbortController | undefined;
+    if (!reqInit2.signal) {
+      controller = new AbortController();
+      reqInit2.signal = controller.signal;
+      reqInit2.abortController = controller;
+    }
+    reqInit2.signal.onabort = function abortHandler() {
       // @ts-ignore
       reqInit2.__aborter = this;
-      controller.signal.onabort = null;
+      // @ts-ignore
+      reqInit2.signal.onabort = null;
     };
 
-    reqInit2.abortController = controller;
-    reqInit2.signal = controller.signal;
-
-    const timer = setTimeout(() => {
-      controller.abort('Timeout of exceeded');
-    }, timeout);
-
-    // @ts-ignore
-    reqInit2.__abortTimer = timer;
+    if (timeout) {
+      const timer = setTimeout(() => {
+        if (reqInit2.signal?.aborted) return;
+        controller?.abort('Timeout of exceeded');
+      }, timeout);
+      // @ts-ignore
+      reqInit2.__abortTimer = timer;
+    }
 
     return reqInit2;
   }

@@ -1,4 +1,4 @@
-import { CustomError } from '../queue';
+import { CustomError } from './queue';
 
 class TimeoutError extends CustomError {
   public type = 'TimeoutError';

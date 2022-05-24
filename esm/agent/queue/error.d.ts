@@ -10,4 +10,4 @@ declare class CustomCancelError extends CustomError {
 }
 declare function isCustomError(err: CustomError): boolean;
 declare function isCustomCancelError(err: CustomError): boolean;
-export { CustomError, CustomCancelError, isCustomError, isCustomCancelError, };
+export { CustomError, CustomCancelError, isCustomError, isCustomCancelError };

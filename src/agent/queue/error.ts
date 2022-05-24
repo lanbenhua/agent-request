@@ -7,16 +7,14 @@ class CustomError extends Error {
     super(message);
 
     this.type = type || 'CustomError';
-    this.name = name || "CustomError";
-    this.message = message || "Invalid";
+    this.name = name || 'CustomError';
+    this.message = message || 'Invalid';
   }
 
   public toString(ecode?: number): string {
-    if (ecode === 1) 
-      return `${this.name}: ${this.message}`
-    if (ecode === 2) 
-      return `${this.message}`
-    return `[${this.type}] ${this.name}: ${this.message}`
+    if (ecode === 1) return `${this.name}: ${this.message}`;
+    if (ecode === 2) return `${this.message}`;
+    return `[${this.type}] ${this.name}: ${this.message}`;
   }
 }
 
@@ -35,9 +33,4 @@ function isCustomCancelError(err: CustomError): boolean {
   return err.custom && err.type === 'CancelError';
 }
 
-export {
-  CustomError,
-  CustomCancelError,
-  isCustomError,
-  isCustomCancelError,
-}
+export { CustomError, CustomCancelError, isCustomError, isCustomCancelError };

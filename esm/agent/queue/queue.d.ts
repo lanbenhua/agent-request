@@ -1,4 +1,5 @@
-import { QueueOptions, QueueItem, QueueTask, CancelablePromise } from './type';
+import { QueueOptions, QueueItem, QueueTask } from './type';
+import { CancelablePromise } from '../type';
 declare class Queue {
     private _options?;
     private _isPaused;
