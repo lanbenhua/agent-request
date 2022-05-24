@@ -1,99 +1,46 @@
-import {
-  Method,
-  SupportedContentType,
-  ContentType,
-  CancelablePromise,
-} from './type';
+import { TimeoutError } from './error';
+import { isNil } from './utils/is';
+import BodyParser from './body-parser';
+import Retry from './retry';
+import Queue from './queue';
 import InterceptorManager, {
   OnFulfilled,
   OnRejected,
 } from './interceptor-manager';
-import Queue, { QueueTaskPriority } from './queue';
-import BodyParser from './body-parser';
-import { TimeoutError } from './error';
-import { isNil } from './utils/is';
-import Retry from './retry';
+import { 
+  get_content_type, 
+  get_response_type, 
+  path_join, 
+  resolve_search_params,
+} from './utils/helper';
+import {
+  Method,
+  Fetch,
+  SupportedContentType,
+  ContentType,
+  CancelablePromise,
+  AgentInit,
+  AgentReqInit,
+  AgentResponse,
+} from './type';
 
-const ContentTypeMap: Record<string, string | undefined | null> = {
-  json: 'application/json; charset=utf-8',
-  form: 'application/x-www-form-urlencoded; charset=utf-8',
-  formdata: undefined,
-  buffer: 'text/plain; charset=utf-8',
-  text: 'text/plain; charset=utf-8',
-  blob: undefined,
-};
 
-type RetryInit<T, U> = {
-  maxTimes?: number;
-  delay?:
-    | number
-    | ((
-        attempt: number,
-        error: Error | null | undefined,
-        response: AgentResponse<T, U> | null | undefined
-      ) => number);
-  retryOn?:
-    | number[]
-    | ((
-        attempt: number,
-        error: Error | null | undefined,
-        response: AgentResponse<T, U> | null | undefined
-      ) => boolean | Promise<boolean>);
-};
-type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
-export type AgentInit<T, U> = {
-  base?: string;
-  timeout?: number;
-  queue?: {
-    concurrency?: number;
-    defaultName?: string;
-    concurrencies?: Record<string, number>;
-  };
-  retry?: RetryInit<T, U>;
-};
-export type AgentReqInit<T, U> = RequestInit & {
-  input: string;
-  url?: string;
-  base?: string;
-  data?: U;
-  timeout?: number;
-  abortController?: AbortController;
-  queue?: {
-    name?: string;
-    priority?: number | QueueTaskPriority;
-  };
-  retry?: RetryInit<T, U>;
-  contentType?: ContentType | SupportedContentType;
-  responseType?: ContentType | SupportedContentType;
-};
-export interface AgentResponse<T, U> {
-  url: string;
-  data: T | undefined;
-  ok: boolean;
-  status: number;
-  statusText: string;
-  headers: Response['headers'];
-  __init__: AgentReqInit<T, U> | undefined;
-  __agent__: Agent;
-  __response__: Response;
-}
-
-const DEFAULT_AGENT_INIT: RetryInit<any, any> = {};
-const DEFAULT_REQ_INIT: Partial<AgentReqInit<any, any>> = {};
+const DEFAULT_AGENT_INIT: AgentInit<any, any> = {};
+const DEFAULT_AGENT_REQ_INIT: Partial<AgentReqInit<any, any>> = {};
 
 class Agent {
   private _fetch: Fetch;
   private _init?: AgentInit<any, any>;
-  private _queueMap?: Map<string, Queue>;
+  private _queueMap: Map<string, Queue> = new Map<string, Queue>();
   private _interceptors = {
     request: new InterceptorManager<AgentReqInit<any, any>>(),
     response: new InterceptorManager<AgentResponse<any, any>>(),
   };
 
-  public get init(): AgentInit<any, any> | undefined {
-    return this._init;
+  public get init(): AgentInit<any, any> {
+    return this._init ?? DEFAULT_AGENT_INIT;
   }
-  public get queueMap(): Map<string, Queue> | undefined {
+  public get queueMap(): Map<string, Queue> {
     return this._queueMap;
   }
   public get interceptors() {
@@ -102,7 +49,8 @@ class Agent {
 
   constructor(fetch: Fetch, init?: AgentInit<any, any>) {
     if (!fetch) throw new Error('Fetch must be a function but null');
-    this._fetch = fetch.bind(null);
+
+    this._fetch = fetch;
     this._init = { ...DEFAULT_AGENT_INIT, ...init };
 
     this._initQueues();
@@ -149,44 +97,31 @@ class Agent {
   }
 
   private _initQueues() {
-    if (!this._init) return;
-    if (!this._init.queue) return;
+    if (!this._init?.queue) return;
     const { queue } = this._init;
-    const { concurrency, defaultName, concurrencies } = queue;
-    if (concurrency && defaultName) {
-      this._createOrGetQueue(defaultName, concurrency);
+    if (!this._queueMap) this._queueMap = new Map<string, Queue>();
+    const { concurrency, defaultName = 'default', concurrencies } = queue;
+    if (concurrency) {
+      const newQueue = new Queue(concurrency);
+      this._queueMap.set(defaultName, newQueue);
     }
     if (concurrencies) {
       Object.entries(concurrencies).map(([name, concurrency]) => {
-        this._createOrGetQueue(name, concurrency);
+        const newQueue = new Queue(concurrency);
+        this._queueMap.set(name, newQueue);
       });
     }
-  }
-
-  private _createOrGetQueue(
-    name: string = 'default',
-    concurrency: number = 5
-  ): Queue {
-    if (!this._queueMap) this._queueMap = new Map<string, Queue>();
-    const oldQueue = this.queue(name);
-    if (oldQueue) return oldQueue;
-    const newQueue = new Queue(concurrency);
-    this._queueMap.set(name, newQueue);
-    return newQueue;
   }
 
   private _queueRequest<T, U>(
     reqInit: AgentReqInit<T, U>
   ): CancelablePromise<AgentResponse<T, U>> {
-    if (this._queueMap) {
-      const queueName = reqInit.queue?.name ?? this._init?.queue?.defaultName;
-      const queueConcurrency = this._init?.queue?.concurrency;
-      const queue = this._createOrGetQueue(queueName, queueConcurrency);
-      return queue.enqueue<AgentResponse<T, U>>({
-        runner: () => this._request(reqInit),
-        priority: reqInit.queue?.priority,
-      });
-    }
+    const queue = this.queue(reqInit.queue?.name ?? this._init?.queue?.defaultName ?? 'default');
+    
+    if (queue) return queue.enqueue<AgentResponse<T, U>>({
+      runner: () => this._request(reqInit),
+      priority: reqInit.queue?.priority,
+    });
 
     return this._request(reqInit);
   }
@@ -217,7 +152,7 @@ class Agent {
     reqInit: AgentReqInit<T, U>
   ): AgentReqInit<T, U> {
     const reqInit2 = {
-      ...DEFAULT_REQ_INIT,
+      ...DEFAULT_AGENT_REQ_INIT,
       ...reqInit,
       base: reqInit.base ?? this._init?.base,
       timeout: reqInit.timeout ?? this._init?.timeout,
@@ -233,11 +168,10 @@ class Agent {
     // handle content-type header according to the contentType
     // if no contentType, will ignore
     // else handle the responsible content type according to the ContentTypeMap
-    const reqContentType =
-      reqInit?.contentType && ContentTypeMap[reqInit?.contentType];
+    const contentType = get_content_type(reqInit?.contentType)
     reqInit2.headers = {
-      ...DEFAULT_REQ_INIT.headers,
-      ...(reqContentType ? { 'content-type': reqContentType } : null),
+      ...DEFAULT_AGENT_REQ_INIT.headers,
+      ...(contentType ? { 'content-type': contentType } : null),
       ...reqInit.headers,
     };
 
@@ -500,46 +434,6 @@ class Agent {
       __response__: res,
     };
   }
-}
-
-const get_response_type = (res: Response): ContentType | undefined => {
-  const contentType = res.headers.get('content-type');
-
-  if (!contentType) return undefined;
-  if (contentType?.includes('application/json')) return ContentType.JSON;
-  if (contentType?.includes('text/plain')) return ContentType.TEXT;
-  if (contentType?.includes('text/html')) return ContentType.TEXT;
-  if (contentType?.includes('application/xml')) return ContentType.TEXT;
-
-  return undefined;
-};
-
-const path_join = (...paths: (string | null | undefined)[]): string => {
-  const non_pre_reg = /(?<!(https?|file|wss?):)\/\/+/;
-  const pre_reg = /^(https?|file|wss?):\/\//;
-
-  return paths
-    .filter(Boolean)
-    .map(String)
-    .reduce((pre, path) => {
-      if (new RegExp(pre_reg).test(path)) {
-        return path;
-      }
-      return pre + '/' + path;
-    })
-    .replace(new RegExp(non_pre_reg, 'gm'), '/');
-};
-
-function resolve_search_params(search?: string, data?: unknown): string {
-  const q = new URLSearchParams(search);
-  const b = new BodyParser(ContentType.FORM).marshal(data);
-  const q2 = new URLSearchParams('?' + b);
-
-  q2.forEach((value, key) => {
-    if (value !== undefined && value !== null) q.append(key, value);
-  });
-
-  return q2.toString();
 }
 
 export default Agent;

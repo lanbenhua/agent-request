@@ -11,10 +11,10 @@ class Queue {
   private _options?: QueueOptions;
   private _isPaused: boolean = false;
   private _pending: number = 0;
-  private _concurrency: number = 10;
+  private _concurrency: number = 5;
   private _queue: QueueItem<any>[] = [];
 
-  constructor(concurrency: number, options?: QueueOptions) {
+  constructor(concurrency: number = 5, options?: QueueOptions) {
     this._queue = [];
     this._pending = 0;
     this._options = { ...DEFAULT_QUEUE_OPTIONS, ...options };
@@ -91,7 +91,7 @@ class Queue {
     this._check<T>();
   }
 
-  protected _check<T>() {
+  private _check<T>() {
     if (this._isPaused) return;
     if (this._pending >= this.size) return;
     if (this._queue.length < 1) return;
@@ -102,12 +102,12 @@ class Queue {
     this._check();
   }
 
-  protected _cancel<T>(task: QueueItem<T>) {
+  private _cancel<T>(task: QueueItem<T>) {
     const { reject } = task;
     reject(new CustomCancelError('Canceled', 'QueueCancelError'));
   }
 
-  protected _run<T>() {
+  private _run<T>() {
     const task: QueueItem<T> | undefined | null = this._queue.shift();
     if (!task) return;
 
@@ -118,7 +118,7 @@ class Queue {
     runner().then(resolve, reject);
   }
 
-  protected _push<T>(task: QueueItem<T>) {
+  private _push<T>(task: QueueItem<T>) {
     this._queue = this._queue
       .concat(task)
       .sort(
@@ -129,7 +129,7 @@ class Queue {
     this._check();
   }
 
-  protected _pop() {
+  private _pop() {
     this._pending--;
 
     if (this._pending < 0)
@@ -138,12 +138,12 @@ class Queue {
     this._check();
   }
 
-  protected _resolve(res: any): any {
+  private _resolve(res: any): any {
     this._pop();
     return res;
   }
 
-  protected _reject(err: any) {
+  private _reject(err: any) {
     this._pop();
     throw err;
   }

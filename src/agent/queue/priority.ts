@@ -2,7 +2,7 @@ import { isNil } from '../utils/is';
 import { QueueTaskPriority } from './type';
 
 class Priority {
-  _priority?: QueueTaskPriority | null = 0;
+  private _priority?: QueueTaskPriority | null = 0;
 
   constructor(priority?: QueueTaskPriority | null) {
     this._priority = priority || 0;
