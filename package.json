@@ -9,6 +9,12 @@
     "ts",
     "typescript"
   ],
+  "files": [
+    "lib",
+    "esm",
+    "README.md",
+    "LICENSE"
+  ],
   "source": "src/index.ts",
   "main": "lib/index.js",
   "module": "esm/index.js",

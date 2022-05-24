@@ -43,10 +43,10 @@ const config: RollupOptions[] = [
       terser(),
     ],
     output: {
-      dir: cwd('./lib'),
       format: 'umd',
       name: 'Agent',
       exports: 'named',
+      dir: cwd('./lib'),
     },
   },
   // {
