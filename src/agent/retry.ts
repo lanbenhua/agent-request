@@ -116,25 +116,27 @@ class Retry<T> {
   ) {
     const { retryOn, maxTimes } = this._init || {};
 
-    if (this.__canceled)
-      return err != null ? reject(err) : resolve(res ?? undefined);
+    const resolveOrReject = () =>
+      err != null ? reject(err) : resolve(res ?? undefined);
+
+    if (this.__canceled) return resolveOrReject();
 
     if (
       maxTimes !== null &&
       maxTimes !== undefined &&
       maxTimes >= this.__attempt
     ) {
-      return err != null ? reject(err) : resolve(res ?? undefined);
+      return resolveOrReject();
     }
 
     if (retryOn) {
       return Promise.resolve(retryOn(this.__attempt, err, res)).then(
         (retryOnRes) => {
-          if (retryOnRes) this._retry(resolve, reject, err, res);
-          else err != null ? reject(err) : resolve(res ?? undefined);
+          if (retryOnRes) return this._retry(resolve, reject, err, res);
+          resolveOrReject();
         },
         () => {
-          err != null ? reject(err) : resolve(res ?? undefined);
+          resolveOrReject();
         }
       );
     }
@@ -144,10 +146,10 @@ class Retry<T> {
       maxTimes !== undefined &&
       maxTimes < this.__attempt
     ) {
-      this._retry(resolve, reject, err, res);
+      return this._retry(resolve, reject, err, res);
     }
 
-    return err != null ? reject(err) : resolve(res ?? undefined);
+    return resolveOrReject();
   }
 }
 
