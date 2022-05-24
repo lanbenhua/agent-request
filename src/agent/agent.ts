@@ -7,6 +7,7 @@ import Queue, { QueueTaskPriority } from '../queue';
 import BodyParser from './body-parser';
 import { TimeoutError } from './error';
 import { isNil } from './utils/is';
+import Retry from './retry';
 
 const ContentTypeMap: Record<string, string | undefined | null> = {
   json: 'application/json; charset=utf-8',
@@ -18,9 +19,9 @@ const ContentTypeMap: Record<string, string | undefined | null> = {
 };
 
 type RetryInit<T, U> = {
-  retryInheritTimeout?: boolean;
-  retryMaxTimes?: number;
-  retryDelay?:
+  // inheritTimeout?: boolean;
+  maxTimes?: number;
+  delay?:
     | number
     | ((
         attempt: number,
@@ -97,12 +98,13 @@ class Agent {
 
   constructor(fetch: Fetch, init?: AgentInit<any, any>) {
     if (!fetch) throw new Error('Fetch must be a function but null');
-    this._fetch = fetch;
+    this._fetch = fetch.bind(null);
     this._init = { ...DEFAULT_AGENT_INIT, ...init };
 
     this._initQueues();
 
     this._request = this._request.bind(this);
+    this._queueRequest = this._queueRequest.bind(this);
     this._wrappedFetch = this._wrappedFetch.bind(this);
     this._handleInterceptors = this._handleInterceptors.bind(this);
   }
@@ -114,17 +116,28 @@ class Agent {
   public request<T, U>(
     reqInit: AgentReqInit<T, U>
   ): Promise<AgentResponse<T, U>> {
-    if (this._queueMap) {
-      const queueName = reqInit.queue?.name ?? this._init?.queue?.defaultName;
-      const queueConcurrency = this._init?.queue?.concurrency;
-      const queue = this._createOrGetQueue(queueName, queueConcurrency);
-      return queue.enqueue<AgentResponse<T, U>>({
-        runner: () => this._request(reqInit),
-        priority: reqInit.queue?.priority,
-      });
+    if (reqInit.retry) {
+      const retry = new Retry<AgentResponse<T, U>>(
+        () => this._queueRequest(reqInit),
+        {
+          ...reqInit.retry,
+          retryOn: reqInit.retry?.retryOn
+            ? (attempt, err, res) => {
+                if (Array.isArray(reqInit.retry?.retryOn)) {
+                  return !!(
+                    res && reqInit.retry?.retryOn.includes(res?.status)
+                  );
+                }
+                return reqInit.retry?.retryOn?.(attempt, err, res) ?? false;
+              }
+            : undefined,
+        }
+      );
+
+      return retry.start() as Promise<AgentResponse<T, U>>;
     }
 
-    return this._request(reqInit);
+    return this._queueRequest(reqInit);
   }
 
   private _initQueues() {
@@ -154,6 +167,22 @@ class Agent {
     return newQueue;
   }
 
+  private _queueRequest<T, U>(
+    reqInit: AgentReqInit<T, U>
+  ): Promise<AgentResponse<T, U>> {
+    if (this._queueMap) {
+      const queueName = reqInit.queue?.name ?? this._init?.queue?.defaultName;
+      const queueConcurrency = this._init?.queue?.concurrency;
+      const queue = this._createOrGetQueue(queueName, queueConcurrency);
+      return queue.enqueue<AgentResponse<T, U>>({
+        runner: () => this._request(reqInit),
+        priority: reqInit.queue?.priority,
+      });
+    }
+
+    return this._request(reqInit);
+  }
+
   private _request<T, U>(
     reqInit: AgentReqInit<T, U>
   ): Promise<AgentResponse<T, U>> {
@@ -165,7 +194,7 @@ class Agent {
     reqInit2.__origin_reqInit = reqInit;
 
     // handle request/response interceptors
-    return this._dispatchFetch<T, U>(reqInit2)
+    return this._wrappedFetch<T, U>(reqInit2)
       .catch((err) => {
         this._checkAborter<T, U>(reqInit2);
         throw err;
@@ -273,87 +302,6 @@ class Agent {
     reqInit2.__abortTimer = timer;
 
     return reqInit2;
-  }
-
-  private _dispatchFetch<T, U>(
-    reqInit: AgentReqInit<T, U>
-  ): Promise<AgentResponse<T, U>> {
-    const {
-      retryOn,
-      retryMaxTimes = 2,
-      retryDelay = 1000,
-      retryInheritTimeout = false,
-    } = reqInit.retry || {};
-
-    if (!retryOn) return this._handleInterceptors<T, U>(reqInit);
-
-    return new Promise((resolve, reject) => {
-      const wrappedFetch = (attempt: number) => {
-        if (attempt > retryMaxTimes)
-          return reject(new Error('Maximum exceeded'));
-        try {
-          this._checkAborter<T, U>(reqInit);
-        } catch (err) {
-          return reject(err);
-        }
-
-        (retryInheritTimeout
-          ? this._handleInterceptors<T, U>(reqInit)
-          : // @ts-ignore
-            this.request<T, U>(reqInit.__origin_reqInit ?? reqInit)
-        )
-          .then((res) => {
-            if (attempt >= retryMaxTimes) return resolve(res);
-            if (Array.isArray(retryOn) && retryOn.includes(res.status))
-              return retry(attempt, null, res);
-            if (typeof retryOn === 'function') {
-              try {
-                return Promise.resolve(retryOn(attempt, null, res))
-                  .then((retryOnRes) => {
-                    if (retryOnRes) return retry(attempt, null, res);
-                    return resolve(res);
-                  })
-                  .catch(reject);
-              } catch (err) {
-                return reject(err);
-              }
-            }
-            resolve(res);
-          })
-          .catch((err) => {
-            if (attempt >= retryMaxTimes) return reject(err);
-            if (typeof retryOn === 'function') {
-              try {
-                return Promise.resolve(retryOn(attempt, err, null))
-                  .then((retryOnRes) => {
-                    if (retryOnRes) return retry(attempt, err, null);
-                    return reject(err);
-                  })
-                  .catch(reject);
-              } catch (err) {
-                return reject(err);
-              }
-            }
-            reject(err);
-          });
-      };
-
-      function retry(
-        attempt: number,
-        error: Error | null | undefined,
-        response: AgentResponse<T, U> | null | undefined
-      ) {
-        const delay =
-          typeof retryDelay === 'function'
-            ? retryDelay(attempt, error, response)
-            : retryDelay;
-        setTimeout(() => {
-          wrappedFetch(++attempt);
-        }, delay);
-      }
-
-      wrappedFetch(0);
-    });
   }
 
   private _handleInterceptors<T, U>(
