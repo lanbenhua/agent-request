@@ -116,19 +116,21 @@ class Agent {
   public request<T, U>(
     reqInit: AgentReqInit<T, U>
   ): Promise<AgentResponse<T, U>> {
-    if (reqInit.retry) {
+    const retryInit =
+      reqInit.retry || this._init?.retry
+        ? { ...this._init?.retry, ...reqInit.retry }
+        : null;
+    if (retryInit) {
       const retry = new Retry<AgentResponse<T, U>>(
         () => this._queueRequest(reqInit),
         {
-          ...reqInit.retry,
-          retryOn: reqInit.retry?.retryOn
+          ...retryInit,
+          retryOn: retryInit?.retryOn
             ? (attempt, err, res) => {
-                if (Array.isArray(reqInit.retry?.retryOn)) {
-                  return !!(
-                    res && reqInit.retry?.retryOn.includes(res?.status)
-                  );
+                if (Array.isArray(retryInit?.retryOn)) {
+                  return !!(res && retryInit?.retryOn.includes(res?.status));
                 }
-                return reqInit.retry?.retryOn?.(attempt, err, res) ?? false;
+                return retryInit?.retryOn?.(attempt, err, res) ?? false;
               }
             : undefined,
         }
@@ -194,7 +196,7 @@ class Agent {
     reqInit2.__origin_reqInit = reqInit;
 
     // handle request/response interceptors
-    return this._wrappedFetch<T, U>(reqInit2)
+    return this._handleInterceptors<T, U>(reqInit2)
       .catch((err) => {
         this._checkAborter<T, U>(reqInit2);
         throw err;

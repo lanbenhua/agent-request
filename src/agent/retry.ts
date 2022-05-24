@@ -34,7 +34,7 @@ class Retry<T> {
     if (!init) throw Error('Retry must have an init, but null');
 
     if (isNil(init.delay) && isNil(init.retryOn))
-      throw Error('Retry init must have a delay or retryOn, but noth null');
+      console.warn('Retry init must have a delay or retryOn, but noth null');
 
     this.__attempt = 0;
     this._runner = runner;
