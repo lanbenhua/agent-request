@@ -1,79 +1,75 @@
 import { PollingInit, PollingRunner, PollingCancel } from './type';
 
 class Polling<T = unknown> {
-  private _init: PollingInit<T>;
+  private __intervalId?: NodeJS.Timeout;
+  private _init?: PollingInit<T>;
+  private _runner?: PollingRunner<T>;
 
-  constructor(init: PollingInit<T>) {
+  constructor(runner: PollingRunner<T>, init: PollingInit<T>) {
+    if (!runner) throw Error('Polling must have a runner, but null');
     if (!init) throw Error('Polling must have an init, but null');
 
+    this.__intervalId = undefined;
     this._init = init;
+    this._runner = runner;
+
+    this._cancel = this._cancel.bind(this);
   }
 
-  public get init(): PollingInit<T> {
+  public get init(): PollingInit<T> | undefined {
     return this._init;
   }
 
-  public polling(runner: PollingRunner<T>): PollingCancel {
-    const { interval, pollingOn } = this._init;
-    if (!runner) throw Error('Must have a runner when polling');
-    if (!pollingOn || !interval)
-      throw Error('Must have a pollingOn function when polling');
+  public polling(): PollingCancel {
+    const { interval } = this._init || {};
 
-    let intervalId: NodeJS.Timeout | null | undefined;
-    // @ts-ignore
-    this._init.__isInitial = true;
-    // @ts-ignore
-    if (this._init.__isInitial) {
-      this._run(runner);
-    } else {
-      intervalId = setInterval(() => {
-        this._run(runner);
-      }, interval);
-    }
+    if (!interval) return () => {};
 
-    return () =>
-      intervalId !== null &&
-      intervalId !== undefined &&
-      clearInterval(intervalId);
+    this.__intervalId = setInterval(() => {
+      this._run();
+    }, interval);
+
+    this._run();
+
+    return () => this._cancel();
   }
 
-  private _run(runner: PollingRunner<T>): Promise<T | undefined> {
-    const { pollingOn } = this._init;
-    if (!pollingOn)
-      throw new Error('Must have a pollingOn function when polling');
+  public cancel() {
+    this._cancel();
+  }
 
-    // @ts-ignore
-    delete this._init.__isInitial;
+  private _cancel() {
+    if (this.__intervalId !== null && this.__intervalId !== undefined)
+      clearInterval(this.__intervalId);
+  }
 
-    return runner()
-      .then((res) => {
-        try {
-          Promise.resolve(pollingOn(null, res))
-            .then((pollingOnRes) => {
-              if (pollingOnRes) runner();
-            })
-            .catch((err) => {
-              throw err;
-            });
-        } catch (err) {
-          throw err;
-        }
+  private _run(): Promise<T | undefined> {
+    if (!this._runner) throw Error('Polling must have a runner, but null');
+
+    return this._runner().then(
+      (res) => {
+        this._check(undefined, res);
         return res;
-      })
-      .catch((err) => {
-        try {
-          Promise.resolve(pollingOn(err, null))
-            .then((pollingOnRes) => {
-              if (pollingOnRes) runner();
-            })
-            .catch((err) => {
-              throw err;
-            });
-        } catch (err) {
-          throw err;
-        }
+      },
+      (err) => {
+        this._check(err, undefined);
         throw err;
-      });
+      }
+    );
+  }
+
+  private _check(err?: Error | null, res?: T | null) {
+    const { pollingOn } = this._init || {};
+    if (pollingOn) {
+      Promise.resolve(pollingOn(err, res)).then(
+        (pollingOnRes) => {
+          if (!pollingOnRes) this._cancel();
+        },
+        () => {
+          this._cancel();
+        }
+      );
+    }
   }
 }
 
