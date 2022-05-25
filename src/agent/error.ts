@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-inferrable-types */
 class CustomError extends Error {
   public custom: boolean = true;
 
@@ -44,4 +45,11 @@ function isCustomTimeoutError(err: CustomError): boolean {
   return err.custom && err.type === 'TimeoutError';
 }
 
-export { CustomError, CustomCancelError, TimeoutError, isCustomError, isCustomCancelError, isCustomTimeoutError };
+export {
+  CustomError,
+  CustomCancelError,
+  TimeoutError,
+  isCustomError,
+  isCustomCancelError,
+  isCustomTimeoutError,
+};

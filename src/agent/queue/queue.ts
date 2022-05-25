@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-inferrable-types */
 import { QueueOptions, QueueItem, QueueTask } from './type';
 import Priority from './priority';
 import { CustomCancelError } from '../error';

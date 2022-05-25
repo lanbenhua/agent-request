@@ -12,7 +12,7 @@ function isNil(obj: any): boolean {
 
 // eslint-disable-next-line
 function isObject(o: any): boolean {
-  return Object.prototype.toString.call(o) === "[object Object]";
+  return Object.prototype.toString.call(o) === '[object Object]';
 }
 
 // eslint-disable-next-line
@@ -26,7 +26,7 @@ function isPlainObject(o: any): boolean {
   if (!isObject(o.constructor.prototype)) return false;
 
   // If constructor does not have an Object-specific method
-  if (!o.constructor.prototype.hasOwnProperty("isPrototypeOf")) {
+  if (!o.constructor.prototype.hasOwnProperty('isPrototypeOf')) {
     return false;
   }
 
@@ -34,8 +34,4 @@ function isPlainObject(o: any): boolean {
   return true;
 }
 
-export {
-  isNil,
-  isObject,
-  isPlainObject
-}
+export { isNil, isObject, isPlainObject };

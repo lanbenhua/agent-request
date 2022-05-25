@@ -1,5 +1,5 @@
-import Agent from "./agent";
-import { QueueTaskPriority } from "./queue";
+import Agent from './agent';
+import { QueueTaskPriority } from './queue';
 
 export type SupportedContentType =
   | 'json'
@@ -50,7 +50,7 @@ export interface AgentRetryInit<T, U> {
         error: Error | null | undefined,
         response: AgentResponse<T, U> | null | undefined
       ) => boolean | Promise<boolean>);
-};
+}
 
 export interface AgentInit<T, U> {
   base?: string;
@@ -61,7 +61,7 @@ export interface AgentInit<T, U> {
     concurrencies?: Record<string, number>;
   };
   retry?: AgentRetryInit<T, U>;
-};
+}
 
 export interface AgentReqInit<T, U> extends RequestInit {
   input: string;
@@ -77,7 +77,7 @@ export interface AgentReqInit<T, U> extends RequestInit {
   retry?: AgentRetryInit<T, U>;
   contentType?: ContentType | SupportedContentType;
   responseType?: ContentType | SupportedContentType;
-};
+}
 
 export interface AgentResponse<T, U> {
   url: string;

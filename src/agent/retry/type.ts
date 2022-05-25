@@ -14,4 +14,4 @@ export interface RetryInit<T> {
     error: Error | null | undefined,
     response: T | null | undefined
   ) => boolean | Promise<boolean>;
-};
+}

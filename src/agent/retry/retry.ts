@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-inferrable-types */
 import { CancelablePromise } from '../type';
 import { isNil } from '../utils/is';
 import { RetryInit, RetryRunner } from './type';
@@ -5,7 +6,7 @@ import { RetryInit, RetryRunner } from './type';
 class Retry<T> {
   private __attempt: number = 0;
   private __canceled?: boolean;
-  private __intervalId?: NodeJS.Timeout;
+  private __intervalId?: NodeJS.Timeout | null;
   private _init?: RetryInit<T>;
   private _runner?: RetryRunner<T>;
 
@@ -41,8 +42,10 @@ class Retry<T> {
   private _cancel() {
     if (!this.__canceled) this.__canceled = true;
 
-    if (this.__intervalId !== null && this.__intervalId !== undefined)
+    if (this.__intervalId !== null && this.__intervalId !== undefined) {
       clearTimeout(this.__intervalId);
+      this.__intervalId = null;
+    }
   }
 
   private _run(): Promise<T | undefined> {
@@ -50,13 +53,11 @@ class Retry<T> {
 
     return new Promise((resolve, reject) => {
       this._runner?.().then(
-        (res) => {
+        res => {
           this._check(resolve, reject, undefined, res);
-          return res;
         },
-        (err) => {
+        err => {
           this._check(resolve, reject, err, undefined);
-          throw err;
         }
       );
     });
@@ -78,10 +79,10 @@ class Retry<T> {
 
     this.__intervalId = setTimeout(() => {
       this._runner?.().then(
-        (res) => {
+        res => {
           this._check(resolve, reject, undefined, res);
         },
-        (err) => {
+        err => {
           this._check(resolve, reject, err, undefined);
         }
       );
@@ -104,14 +105,14 @@ class Retry<T> {
     if (
       maxTimes !== null &&
       maxTimes !== undefined &&
-      maxTimes >= this.__attempt
+      this.__attempt >= maxTimes
     ) {
       return resolveOrReject();
     }
 
     if (retryOn) {
       return Promise.resolve(retryOn(this.__attempt, err, res)).then(
-        (retryOnRes) => {
+        retryOnRes => {
           if (retryOnRes) return this._retry(resolve, reject, err, res);
           resolveOrReject();
         },

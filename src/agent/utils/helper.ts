@@ -1,5 +1,5 @@
-import BodyParser from "../body-parser";
-import { ContentType, SupportedContentType } from "../type";
+import BodyParser from '../body-parser';
+import { ContentType, SupportedContentType } from '../type';
 
 export const get_response_type = (res: Response): ContentType | undefined => {
   const contentType = res.headers.get('content-type');
@@ -29,7 +29,10 @@ export const path_join = (...paths: (string | null | undefined)[]): string => {
     .replace(new RegExp(non_pre_reg, 'gm'), '/');
 };
 
-export const resolve_search_params = (search?: string, data?: unknown): string => {
+export const resolve_search_params = (
+  search?: string,
+  data?: unknown
+): string => {
   const q = new URLSearchParams(search);
   const b = new BodyParser(ContentType.FORM).marshal(data);
   const q2 = new URLSearchParams('?' + b);
@@ -39,9 +42,11 @@ export const resolve_search_params = (search?: string, data?: unknown): string =
   });
 
   return q2.toString();
-}
+};
 
-export const get_content_type = (type?: string | ContentType | SupportedContentType): string | null | undefined => {
+export const get_content_type = (
+  type?: string | ContentType | SupportedContentType
+): string | null | undefined => {
   const ContentTypeMap: Record<string, string | undefined | null> = {
     json: 'application/json; charset=utf-8',
     form: 'application/x-www-form-urlencoded; charset=utf-8',
@@ -52,4 +57,4 @@ export const get_content_type = (type?: string | ContentType | SupportedContentT
   };
 
   return type && ContentTypeMap[type];
-}
+};

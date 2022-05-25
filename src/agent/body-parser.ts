@@ -48,10 +48,11 @@ function formdataencode(obj: any): FormData {
   const formdata = new FormData();
 
   if (isPlainObject(obj))
+    // eslint-disable-next-line @typescript-eslint/ban-types
     Object.entries(obj as {}).forEach(([key, value]) => {
       if (isNil(value)) return;
       if (Array.isArray(value)) {
-        value.forEach((v) => {
+        value.forEach(v => {
           if (!isNil(v)) formdata.append(key, searchParamsStringify(v));
         });
       }
@@ -66,12 +67,13 @@ function formdataencode(obj: any): FormData {
   return formdata;
 }
 
+// eslint-disable-next-line @typescript-eslint/ban-types
 function marshalObj(obj: {}): string {
   return Object.entries(obj)
     .reduce((o, [key, value]) => {
       if (isNil(value)) return o;
       if (Array.isArray(value)) {
-        value.forEach((v) => {
+        value.forEach(v => {
           if (!isNil(v)) o.append(key, searchParamsStringify(v));
         });
         return o;

@@ -23,7 +23,7 @@ class Polling<T = unknown> {
   public polling(): PollingCancel {
     const { interval } = this._init || {};
 
-    if (!interval) return () => {};
+    if (!interval) return () => this._cancel();
 
     this.__intervalId = setInterval(() => {
       this._run();
@@ -47,11 +47,11 @@ class Polling<T = unknown> {
     if (!this._runner) throw Error('Polling must have a runner, but null');
 
     return this._runner().then(
-      (res) => {
+      res => {
         this._check(undefined, res);
         return res;
       },
-      (err) => {
+      err => {
         this._check(err, undefined);
         throw err;
       }
@@ -62,7 +62,7 @@ class Polling<T = unknown> {
     const { pollingOn } = this._init || {};
     if (pollingOn) {
       Promise.resolve(pollingOn(err, res)).then(
-        (pollingOnRes) => {
+        pollingOnRes => {
           if (!pollingOnRes) this._cancel();
         },
         () => {

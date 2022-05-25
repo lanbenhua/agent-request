@@ -7,10 +7,10 @@ import InterceptorManager, {
   OnFulfilled,
   OnRejected,
 } from './interceptor-manager';
-import { 
-  get_content_type, 
-  get_response_type, 
-  path_join, 
+import {
+  get_content_type,
+  get_response_type,
+  path_join,
   resolve_search_params,
 } from './utils/helper';
 import {
@@ -23,7 +23,6 @@ import {
   AgentReqInit,
   AgentResponse,
 } from './type';
-
 
 const DEFAULT_AGENT_INIT: AgentInit<any, any> = {};
 const DEFAULT_AGENT_REQ_INIT: Partial<AgentReqInit<any, any>> = {};
@@ -116,12 +115,15 @@ class Agent {
   private _queueRequest<T, U>(
     reqInit: AgentReqInit<T, U>
   ): CancelablePromise<AgentResponse<T, U>> {
-    const queue = this.queue(reqInit.queue?.name ?? this._init?.queue?.defaultName ?? 'default');
-    
-    if (queue) return queue.enqueue<AgentResponse<T, U>>({
-      runner: () => this._request(reqInit),
-      priority: reqInit.queue?.priority,
-    });
+    const queue = this.queue(
+      reqInit.queue?.name ?? this._init?.queue?.defaultName ?? 'default'
+    );
+
+    if (queue)
+      return queue.enqueue<AgentResponse<T, U>>({
+        runner: () => this._request(reqInit),
+        priority: reqInit.queue?.priority,
+      });
 
     return this._request(reqInit);
   }
@@ -134,7 +136,7 @@ class Agent {
       this._resolveReqInit<T, U>(this._resolveInput<T, U>(reqInit))
     );
     const promise = this._handleInterceptors<T, U>(resolvedReqInit)
-      .catch((err) => {
+      .catch(err => {
         this._checkAborter<T, U>(resolvedReqInit);
         throw err;
       })
@@ -168,7 +170,7 @@ class Agent {
     // handle content-type header according to the contentType
     // if no contentType, will ignore
     // else handle the responsible content type according to the ContentTypeMap
-    const contentType = get_content_type(reqInit?.contentType)
+    const contentType = get_content_type(reqInit?.contentType);
     reqInit2.headers = {
       ...DEFAULT_AGENT_REQ_INIT.headers,
       ...(contentType ? { 'content-type': contentType } : null),
@@ -254,7 +256,7 @@ class Agent {
 
     let synchronousRequestInterceptors: boolean | undefined = true;
 
-    this._interceptors.request.forEach((interceptor) => {
+    this._interceptors.request.forEach(interceptor => {
       const { runWhen, onFulfilled, onRejected } = interceptor;
 
       if (typeof runWhen === 'function' && runWhen(reqInit) === false) return;
@@ -269,7 +271,7 @@ class Agent {
       | OnFulfilled<AgentResponse<T, U>>
       | OnRejected
     )[] = [];
-    this._interceptors.response.forEach((interceptor) =>
+    this._interceptors.response.forEach(interceptor =>
       responseInterceptorChain.unshift(
         interceptor.onFulfilled,
         interceptor.onRejected
@@ -298,15 +300,17 @@ class Agent {
           promiseChain = promiseChain.then(onFulfilled as never, onRejected);
       }
 
-      return promiseChain as unknown as Promise<AgentResponse<T, U>>;
+      return (promiseChain as unknown) as Promise<AgentResponse<T, U>>;
     }
 
     let chainReqInit = reqInit;
     while (requestInterceptorChain.length) {
-      const onFulfilled: OnFulfilled<AgentReqInit<T, U>> | undefined =
-        requestInterceptorChain.shift();
-      const onRejected: OnRejected | undefined =
-        requestInterceptorChain.shift();
+      const onFulfilled:
+        | OnFulfilled<AgentReqInit<T, U>>
+        | undefined = requestInterceptorChain.shift();
+      const onRejected:
+        | OnRejected
+        | undefined = requestInterceptorChain.shift();
       try {
         if (onFulfilled)
           chainReqInit = onFulfilled(chainReqInit) as AgentReqInit<T, U>;
@@ -316,14 +320,19 @@ class Agent {
       }
     }
 
-    let responsePromiseChain: Promise<AgentResponse<T, U>> =
-      this._wrappedFetch(chainReqInit);
+    let responsePromiseChain: Promise<AgentResponse<T, U>> = this._wrappedFetch(
+      chainReqInit
+    );
 
     while (responseInterceptorChain.length) {
-      const onFulfilled: OnFulfilled<AgentResponse<T, U>> | undefined =
-        responseInterceptorChain.shift() as OnFulfilled<AgentResponse<T, U>>;
-      const onRejected: OnRejected | undefined =
-        responseInterceptorChain.shift();
+      const onFulfilled:
+        | OnFulfilled<AgentResponse<T, U>>
+        | undefined = responseInterceptorChain.shift() as OnFulfilled<
+        AgentResponse<T, U>
+      >;
+      const onRejected:
+        | OnRejected
+        | undefined = responseInterceptorChain.shift();
       if (onFulfilled)
         responsePromiseChain = responsePromiseChain.then(
           onFulfilled,
@@ -351,7 +360,7 @@ class Agent {
       );
 
     return this._fetch(url, reqInit)
-      .then((res) => {
+      .then(res => {
         __res__ = res;
 
         const responseType = this._checkResponseType(res, reqInit.responseType);
@@ -368,7 +377,7 @@ class Agent {
 
         throw new Error(`Agent: unexcepted response type '${responseType}'`);
       })
-      .then((data) => this._decorateResponse<T, U>(reqInit, __res__, data));
+      .then(data => this._decorateResponse<T, U>(reqInit, __res__, data));
   }
 
   private _checkAborter<T, U>(reqInit: AgentReqInit<T, U>) {
