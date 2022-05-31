@@ -1,5 +1,5 @@
 {
-  "name": "agentman",
+  "name": "agent-request",
   "version": "0.0.1",
   "description": "request agent base on fetch",
   "keywords": [
