@@ -1,16 +1,17 @@
 /* eslint-disable @typescript-eslint/no-inferrable-types */
-import { CancelablePromise } from '../type';
-import { isNil } from '../utils/is';
-import { RetryInit, RetryRunner } from './type';
+import { AgentFetch, AgentReqInit, AgentResponse, CancelablePromise, PromiseTaskRunner } from './types/agent';
+import { RetryInit } from './types/retry';
+import { isNil } from './utils/is';
 
-class Retry<T> {
+class RetryScheduler<T> {
   private __attempt: number = 0;
   private __canceled?: boolean;
-  private __intervalId?: NodeJS.Timeout | null;
+  // @ts-ignore
+  private __intervalId?: number | null;
   private _init?: RetryInit<T>;
-  private _runner?: RetryRunner<T>;
+  private _runner?: PromiseTaskRunner<T>;
 
-  constructor(runner: RetryRunner<T>, init: RetryInit<T>) {
+  constructor(runner: PromiseTaskRunner<T>, init: RetryInit<T>) {
     if (!runner) throw Error('Retry must have a runner, but null');
     if (!init) throw Error('Retry must have an init, but null');
 
@@ -26,8 +27,8 @@ class Retry<T> {
     return this._init;
   }
 
-  public start(): CancelablePromise<T | undefined> {
-    const res: CancelablePromise<T | undefined> = this._run();
+  public start(): CancelablePromise<T> {
+    const res: CancelablePromise<T> = this._run();
 
     res.cancel = () => {
       this._cancel();
@@ -43,15 +44,15 @@ class Retry<T> {
     if (!this.__canceled) this.__canceled = true;
 
     if (this.__intervalId !== null && this.__intervalId !== undefined) {
-      clearTimeout(this.__intervalId);
+      window.clearTimeout(this.__intervalId);
       this.__intervalId = null;
     }
   }
 
-  private _run(): Promise<T | undefined> {
+  private _run(): Promise<T> {
     if (!this._runner) throw Error('Retry must have a runner, but null');
 
-    return new Promise((resolve, reject) => {
+    return new Promise<T>((resolve, reject) => {
       this._runner?.().then(
         res => {
           this._check(resolve, reject, undefined, res);
@@ -64,7 +65,7 @@ class Retry<T> {
   }
 
   private _retry(
-    resolve: (value: T | PromiseLike<T | undefined> | undefined) => void,
+    resolve: (value: T | PromiseLike<T>) => void,
     reject: (reason?: any) => void,
     err?: Error | null,
     res?: T | null
@@ -77,7 +78,7 @@ class Retry<T> {
     const delay2 =
       typeof delay === 'function' ? delay(this.__attempt, err, res) : delay;
 
-    this.__intervalId = setTimeout(() => {
+    this.__intervalId = window.setTimeout(() => {
       this._runner?.().then(
         res => {
           this._check(resolve, reject, undefined, res);
@@ -90,7 +91,7 @@ class Retry<T> {
   }
 
   private _check(
-    resolve: (value: T | PromiseLike<T | undefined> | undefined) => void,
+    resolve: (value: T | PromiseLike<T>) => void,
     reject: (reason?: any) => void,
     err?: Error | null,
     res?: T | null
@@ -98,7 +99,7 @@ class Retry<T> {
     const { retryOn, maxTimes } = this._init || {};
 
     const resolveOrReject = () =>
-      err != null ? reject(err) : resolve(res ?? undefined);
+      err != null ? reject(err) : res != null ? resolve(res): (void 0);
 
     if (this.__canceled) return resolveOrReject();
 
@@ -134,4 +135,11 @@ class Retry<T> {
   }
 }
 
-export default Retry;
+export default RetryScheduler;
+
+export const retryFetch = <T, U>(fetcher: AgentFetch<T, U>, retry: RetryInit<AgentResponse<T, U>>) => (
+  init: AgentReqInit<T, U>
+): Promise<AgentResponse<T, U>> => {
+  return new RetryScheduler<AgentResponse<T, U>>(() => fetcher(init), retry).start();
+};
+

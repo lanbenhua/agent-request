@@ -1,14 +1,34 @@
 /* eslint-disable @typescript-eslint/no-inferrable-types */
-import { QueueOptions, QueueItem, QueueTask } from './type';
-import Priority from './priority';
-import { CustomCancelError } from '../error';
-import { CancelablePromise } from '../type';
+import { CustomCancelError } from './error';
+import { AgentFetch, AgentInit, AgentReqInit, AgentResponse, CancelablePromise } from './types/agent';
+import { QueueItem, QueueOptions, QueueTask, QueueTaskPriority } from './types/queue';
+import { isNil } from './utils/is';
 
 const DEFAULT_QUEUE_OPTIONS: QueueOptions = {
   auto: true,
 };
 
-class Queue {
+class QueuePriority {
+  private _priority?: QueueTaskPriority | null = 0;
+
+  constructor(priority?: QueueTaskPriority | null) {
+    this._priority = priority || 0;
+  }
+
+  public num(): number {
+    const priority = this._priority;
+    if (isNil(priority)) return 0;
+    if (priority === 'HIGHEST') return Number.MAX_SAFE_INTEGER;
+    if (priority === 'HIGH') return 1e4;
+    if (priority === 'MEDIUM') return 0;
+    if (priority === 'LOW') return -1e4;
+    if (priority === 'LOWEST') return Number.MIN_SAFE_INTEGER;
+
+    return priority as number;
+  }
+}
+
+class QueueScheduler {
   private _options?: QueueOptions;
   private _isPaused: boolean = false;
   private _pending: number = 0;
@@ -124,7 +144,7 @@ class Queue {
       .concat(task)
       .sort(
         (a, b) =>
-          new Priority(b.priority).num() - new Priority(a.priority).num()
+          new QueuePriority(b.priority).num() - new QueuePriority(a.priority).num()
       );
 
     this._check();
@@ -150,4 +170,13 @@ class Queue {
   }
 }
 
-export default Queue;
+export default QueueScheduler;
+
+export const queueFetch = <T, U>(fetcher: AgentFetch<T, U>, queue: QueueScheduler) => (
+  init: AgentReqInit<T, U>
+): Promise<AgentResponse<T, U>> => {
+  return queue.enqueue<AgentResponse<T, U>>({
+    runner: () => fetcher(init),
+    priority: init.queue?.priority,
+  })
+};

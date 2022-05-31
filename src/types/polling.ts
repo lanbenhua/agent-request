@@ -1,5 +1,3 @@
-export type PollingRunner<T> = () => Promise<T | undefined>;
-
 export type PollingCancel = () => void;
 
 export interface PollingInit<T> {

@@ -1,6 +1,6 @@
 import { stringify } from './utils/json';
 import { isNil, isPlainObject } from './utils/is';
-import { ContentType, SupportedContentType } from './type';
+import { ContentType, SupportedContentType } from './types/agent';
 
 class BodyParser {
   private _contentType?: ContentType | SupportedContentType;

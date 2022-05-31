@@ -1,5 +1,3 @@
-export type RetryRunner<T> = () => Promise<T>;
-
 export interface RetryInit<T> {
   maxTimes?: number;
   delay?:

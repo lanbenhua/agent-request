@@ -1,5 +1,6 @@
-import Agent from './agent';
+import Agent from '../agent';
 import { QueueTaskPriority } from './queue';
+import { RetryInit } from './retry';
 
 export type SupportedContentType =
   | 'json'
@@ -30,26 +31,12 @@ export const enum Method {
 
 export type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
+export type AgentFetch<T, U> = (init: AgentReqInit<T, U>) => Promise<AgentResponse<T, U>>;
+
+export type PromiseTaskRunner<T> = () => Promise<T>;
+
 export interface CancelablePromise<T> extends Promise<T> {
   cancel?: (reason?: any) => void;
-}
-
-export interface AgentRetryInit<T, U> {
-  maxTimes?: number;
-  delay?:
-    | number
-    | ((
-        attempt: number,
-        error: Error | null | undefined,
-        response: AgentResponse<T, U> | null | undefined
-      ) => number);
-  retryOn?:
-    | number[]
-    | ((
-        attempt: number,
-        error: Error | null | undefined,
-        response: AgentResponse<T, U> | null | undefined
-      ) => boolean | Promise<boolean>);
 }
 
 export interface AgentInit<T, U> {
@@ -60,7 +47,7 @@ export interface AgentInit<T, U> {
     defaultName?: string;
     concurrencies?: Record<string, number>;
   };
-  retry?: AgentRetryInit<T, U>;
+  retry?: RetryInit<AgentResponse<T, U>>;
 }
 
 export interface AgentReqInit<T, U> extends RequestInit {
@@ -74,7 +61,7 @@ export interface AgentReqInit<T, U> extends RequestInit {
     name?: string;
     priority?: number | QueueTaskPriority;
   };
-  retry?: AgentRetryInit<T, U>;
+  retry?: RetryInit<AgentResponse<T, U>>;
   contentType?: ContentType | SupportedContentType;
   responseType?: ContentType | SupportedContentType;
 }

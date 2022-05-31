@@ -1,19 +1,19 @@
-import { PollingInit, PollingRunner, PollingCancel } from './type';
+import { PromiseTaskRunner } from './types/agent';
+import { PollingInit, PollingCancel } from './types/polling';
 
-class Polling<T = unknown> {
+class PollingScheduler<T = unknown> {
+  // @ts-ignore
   private __intervalId?: NodeJS.Timeout;
   private _init?: PollingInit<T>;
-  private _runner?: PollingRunner<T>;
+  private _runner?: PromiseTaskRunner<T>;
 
-  constructor(runner: PollingRunner<T>, init: PollingInit<T>) {
+  constructor(runner: PromiseTaskRunner<T>, init: PollingInit<T>) {
     if (!runner) throw Error('Polling must have a runner, but null');
     if (!init) throw Error('Polling must have an init, but null');
 
     this.__intervalId = undefined;
     this._init = init;
     this._runner = runner;
-
-    this._cancel = this._cancel.bind(this);
   }
 
   public get init(): PollingInit<T> | undefined {
@@ -73,4 +73,4 @@ class Polling<T = unknown> {
   }
 }
 
-export default Polling;
+export default PollingScheduler;

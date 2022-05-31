@@ -1,29 +1,15 @@
-type OnFulfilled<T> = (response: T) => T | Promise<T>;
-// eslint-disable-next-line
-type OnRejected = (error: any) => any;
-
-type InterceptorOptions<T> = {
-  synchronous?: boolean;
-  runWhen?: ((init: T) => boolean) | null;
-};
-
-interface Interceptor<T> {
-  onFulfilled: OnFulfilled<T>;
-  onRejected: OnRejected;
-  synchronous?: InterceptorOptions<T>['synchronous'];
-  runWhen?: InterceptorOptions<T>['runWhen'];
-}
+import { InterceptorInit, InterceptorOptions } from "./types/interceptor";
 
 class InterceptorManager<T> {
-  public handlers: (Interceptor<T> | null)[] = [];
+  public handlers: (InterceptorInit<T> | null)[] = [];
 
   constructor() {
     this.handlers = [];
   }
 
   public use(
-    onFulfilled: OnFulfilled<T>,
-    onRejected: OnRejected,
+    onFulfilled: InterceptorInit<T>['onFulfilled'],
+    onRejected: InterceptorInit<T>['onRejected'],
     options?: InterceptorOptions<T>
   ): number {
     this.handlers = this.handlers.concat({
@@ -42,7 +28,7 @@ class InterceptorManager<T> {
     }
   }
 
-  public forEach(h: (handler: Interceptor<T>, index: number) => void) {
+  public forEach(h: (handler: InterceptorInit<T>, index: number) => void) {
     this.handlers.forEach((handler, index) => {
       if (handler !== null) {
         h(handler, index);
@@ -50,7 +36,5 @@ class InterceptorManager<T> {
     });
   }
 }
-
-export { Interceptor, InterceptorOptions, OnFulfilled, OnRejected };
 
 export default InterceptorManager;

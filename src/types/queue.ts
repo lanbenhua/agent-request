@@ -1,4 +1,4 @@
-export type QueueRunner<T> = () => Promise<T>;
+import { PromiseTaskRunner } from "./agent";
 
 export type QueueTaskPriority =
   | number
@@ -13,7 +13,7 @@ export interface QueueOptions {
 }
 
 export interface QueueTask<T> {
-  runner: QueueRunner<T>;
+  runner: PromiseTaskRunner<T>;
   priority?: QueueTaskPriority | null;
 }
 

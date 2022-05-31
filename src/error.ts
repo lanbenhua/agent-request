@@ -36,13 +36,13 @@ class TimeoutError extends CustomError {
 }
 
 function isCustomError(err: CustomError): boolean {
-  return err.custom;
+  return err instanceof CustomError && err.custom;
 }
 function isCustomCancelError(err: CustomError): boolean {
-  return err.custom && err.type === 'CancelError';
+  return err instanceof CustomError && err.custom && err.type === 'CancelError';
 }
 function isCustomTimeoutError(err: CustomError): boolean {
-  return err.custom && err.type === 'TimeoutError';
+  return err instanceof CustomError && err.custom && err.type === 'TimeoutError';
 }
 
 export {

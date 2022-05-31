@@ -1,5 +1,5 @@
 import BodyParser from '../body-parser';
-import { ContentType, SupportedContentType } from '../type';
+import { ContentType, SupportedContentType } from '../types/agent';
 
 export const get_response_type = (res: Response): ContentType | undefined => {
   const contentType = res.headers.get('content-type');
@@ -46,8 +46,8 @@ export const resolve_search_params = (
 
 export const get_content_type = (
   type?: string | ContentType | SupportedContentType
-): string | null | undefined => {
-  const ContentTypeMap: Record<string, string | undefined | null> = {
+): string | undefined => {
+  const ContentTypeMap: Record<string, string | undefined> = {
     json: 'application/json; charset=utf-8',
     form: 'application/x-www-form-urlencoded; charset=utf-8',
     formdata: undefined,
