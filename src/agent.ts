@@ -58,7 +58,7 @@ class Agent {
     this._handleInterceptors = this._handleInterceptors.bind(this);
   }
 
-  private init () {
+  private init() {
     this._initQueueScheduler();
 
     this._interceptors.request.use((init) => {
