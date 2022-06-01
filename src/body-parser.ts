@@ -15,27 +15,21 @@ class BodyParser {
 
     if (_contentType === ContentType.FORMDATA) return formdataencode(body);
 
-    if (_contentType === ContentType.JSON)
-      return typeof body === 'string' ? body : stringify(body);
+    if (_contentType === ContentType.JSON) return typeof body === 'string' ? body : stringify(body);
 
     if (_contentType === ContentType.FORM) return formurlencode(body);
 
     if (_contentType === ContentType.BLOB) {
-      if (!(body instanceof Blob))
-        throw new Error('BodyParser: must be a blob when content type is blob');
+      if (!(body instanceof Blob)) throw new Error('BodyParser: must be a blob when content type is blob');
       return body;
     }
 
     if (_contentType === ContentType.BUFFER) {
-      if (!(body instanceof ArrayBuffer))
-        throw new Error(
-          'BodyParser: must be a arraybuffer when content type is arraybuffer'
-        );
+      if (!(body instanceof ArrayBuffer)) throw new Error('BodyParser: must be a arraybuffer when content type is arraybuffer');
       return body;
     }
 
-    if (_contentType === ContentType.TEXT)
-      return typeof body === 'string' ? body : stringify(body);
+    if (_contentType === ContentType.TEXT) return typeof body === 'string' ? body : stringify(body);
 
     return body;
   }

@@ -22,7 +22,7 @@ class CustomError extends Error {
 class CustomCancelError extends CustomError {
   public type = 'CancelError';
 
-  constructor(message?: string, name?: string) {
+  constructor(message?: string, name: string = 'CancelError') {
     super(message, 'CancelError', name);
   }
 }
@@ -30,7 +30,7 @@ class CustomCancelError extends CustomError {
 class TimeoutError extends CustomError {
   public type = 'TimeoutError';
 
-  constructor(message?: string, name?: string) {
+  constructor(message?: string, name: string = 'TimeoutError') {
     super(message, 'TimeoutError', name);
   }
 }

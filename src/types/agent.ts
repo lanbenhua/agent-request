@@ -73,7 +73,7 @@ export interface AgentResponse<T, U> {
   status: number;
   statusText: string;
   headers: Response['headers'];
-  __init__: AgentReqInit<T, U> | undefined;
+  __init__: AgentReqInit<T, U>;
   __agent__: Agent;
   __response__: Response;
 }

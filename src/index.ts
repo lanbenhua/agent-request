@@ -3,6 +3,10 @@ import Retry from './retry';
 import Queue from './queue';
 import Polling from './polling';
 
+export * from './retry';
+export * from './queue';
+export * from './error';
+
 export * from './types/agent';
 export * from './types/interceptor';
 export * from './types/polling';

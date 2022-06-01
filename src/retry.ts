@@ -54,12 +54,8 @@ class RetryScheduler<T> {
 
     return new Promise<T>((resolve, reject) => {
       this._runner?.().then(
-        res => {
-          this._check(resolve, reject, undefined, res);
-        },
-        err => {
-          this._check(resolve, reject, err, undefined);
-        }
+        res => this._check(resolve, reject, undefined, res),
+        err => this._check(resolve, reject, err, undefined)
       );
     });
   }
@@ -67,27 +63,21 @@ class RetryScheduler<T> {
   private _retry(
     resolve: (value: T | PromiseLike<T>) => void,
     reject: (reason?: any) => void,
-    err?: Error | null,
+    err?: Error | null, 
     res?: T | null
   ) {
     if (!this._runner) throw Error('Retry must have a runner, but null');
 
-    const { delay } = this._init || {};
     this.__attempt++;
 
-    const delay2 =
-      typeof delay === 'function' ? delay(this.__attempt, err, res) : delay;
+    const delay = typeof this._init?.delay === 'function' ? this._init.delay(this.__attempt, err, res) : this._init?.delay;
 
     this.__intervalId = window.setTimeout(() => {
       this._runner?.().then(
-        res => {
-          this._check(resolve, reject, undefined, res);
-        },
-        err => {
-          this._check(resolve, reject, err, undefined);
-        }
+        res => this._check(resolve, reject, undefined, res),
+        err => this._check(resolve, reject, err, undefined)
       );
-    }, delay2);
+    }, delay);
   }
 
   private _check(
@@ -98,18 +88,11 @@ class RetryScheduler<T> {
   ) {
     const { retryOn, maxTimes } = this._init || {};
 
-    const resolveOrReject = () =>
-      err != null ? reject(err) : res != null ? resolve(res): (void 0);
+    const resolveOrReject = () => err !== null && err !== undefined ? reject(err) : resolve((res ?? undefined) as T);
 
     if (this.__canceled) return resolveOrReject();
 
-    if (
-      maxTimes !== null &&
-      maxTimes !== undefined &&
-      this.__attempt >= maxTimes
-    ) {
-      return resolveOrReject();
-    }
+    if (maxTimes !== null && maxTimes !== undefined && this.__attempt >= maxTimes) return resolveOrReject()
 
     if (retryOn) {
       return Promise.resolve(retryOn(this.__attempt, err, res)).then(
@@ -117,19 +100,11 @@ class RetryScheduler<T> {
           if (retryOnRes) return this._retry(resolve, reject, err, res);
           resolveOrReject();
         },
-        () => {
-          resolveOrReject();
-        }
+        () => resolveOrReject()
       );
     }
 
-    if (
-      maxTimes !== null &&
-      maxTimes !== undefined &&
-      maxTimes < this.__attempt
-    ) {
-      return this._retry(resolve, reject, err, res);
-    }
+    if (maxTimes !== null && maxTimes !== undefined && maxTimes < this.__attempt) return this._retry(resolve, reject, err, res);
 
     return resolveOrReject();
   }

@@ -21,9 +21,7 @@ export const path_join = (...paths: (string | null | undefined)[]): string => {
     .filter(Boolean)
     .map(String)
     .reduce((pre, path) => {
-      if (new RegExp(pre_reg).test(path)) {
-        return path;
-      }
+      if (new RegExp(pre_reg).test(path)) return path;
       return pre + '/' + path;
     })
     .replace(new RegExp(non_pre_reg, 'gm'), '/');

@@ -1,30 +1,12 @@
+import { Method, Fetch, SupportedContentType, ContentType, CancelablePromise, AgentInit, AgentReqInit, AgentResponse, AgentFetch } from './types/agent';
+import { get_content_type, get_response_type, path_join, resolve_search_params } from './utils/helper';
 import { InterceptorInit } from './types/interceptor';
-import {
-  get_content_type,
-  get_response_type,
-  path_join,
-  resolve_search_params,
-} from './utils/helper';
-import {
-  Method,
-  Fetch,
-  SupportedContentType,
-  ContentType,
-  CancelablePromise,
-  AgentInit,
-  AgentReqInit,
-  AgentResponse,
-  AgentFetch,
-} from './types/agent';
+import QueueScheduler, { queueFetch } from './queue';
 import BodyParser from './body-parser';
 import Interceptor from './interceptor';
-import { retryFetch } from './retry';
-import QueueScheduler, { queueFetch } from './queue';
 import TimeoutScheduler from './timeout';
-import { isCustomTimeoutError } from './error';
-
-const DEFAULT_AGENT_INIT: AgentInit<any, any> = {};
-const DEFAULT_AGENT_REQ_INIT: Partial<AgentReqInit<any, any>> = {};
+import { retryFetch } from './retry';
+import { TimeoutError } from './error';
 
 class Agent {
   private _fetch: Fetch;
@@ -36,7 +18,7 @@ class Agent {
   };
 
   public get agentInit(): AgentInit<any, any> | undefined {
-    return this._init ?? DEFAULT_AGENT_INIT;
+    return this._init;
   }
   public get queueSchedulerMap(): Map<string, QueueScheduler> {
     return this._queueSchedulerMap;
@@ -49,7 +31,7 @@ class Agent {
     if (!fetch) throw new Error('Fetch must be a function but null');
 
     this._fetch = fetch;
-    this._init = { ...DEFAULT_AGENT_INIT, ...init };
+    this._init = init;
 
     this.init();
     
@@ -85,8 +67,10 @@ class Agent {
       // handle content-type header according to the contentType
       // if no contentType, will ignore
       // else handle the responsible content type according to the ContentTypeMap
+      const contentType = get_content_type(init?.contentType)
       init.headers = {
-        'content-type': (init.headers as Record<string, string>)?.['content-type'] ?? get_content_type(init?.contentType) ?? undefined
+        ...(contentType ? {'content-type': contentType} : undefined),
+        ...init.headers,
       };
 
       // if init includes body, will use it directly
@@ -142,17 +126,16 @@ class Agent {
 
   private _request<T, U>(reqInit: AgentReqInit<T, U>): CancelablePromise<AgentResponse<T, U>> {
     const initialReqInit = {
-      ...DEFAULT_AGENT_REQ_INIT,
       ...reqInit,
       base: reqInit.base ?? this._init?.base,
       timeout: reqInit.timeout ?? this._init?.timeout,
       retry: this._init?.retry || reqInit.retry ? { ...this._init?.retry, ...reqInit.retry } : undefined,
       headers: {
-        ...DEFAULT_AGENT_REQ_INIT.headers,
         ...reqInit.headers,
       }
     };
 
+    // enhance timeout
     let timeoutScheduler: TimeoutScheduler | undefined;
     if (initialReqInit.timeout) {
       let controller: AbortController | undefined;
@@ -163,25 +146,34 @@ class Agent {
       }
       timeoutScheduler = new TimeoutScheduler(initialReqInit.timeout, controller);
       timeoutScheduler.wait().then(() => {
-        if (controller?.signal.aborted) return;
-        controller?.abort('Timeout of exceeded');
+        if (!controller?.signal.aborted) {
+          // @ts-ignore
+          initialReqInit.__timeoutError = new TimeoutError('Timeout of exceeded', 'TimeoutError');
+          controller?.abort('Timeout of exceeded');
+        };
       })
     }
 
     const promise = this._handleInterceptors<T, U>(initialReqInit)
       .catch(err => {
-        if (err && isCustomTimeoutError(err)) {
-          initialReqInit.signal = undefined;
-          initialReqInit.abortController = undefined;
-          timeoutScheduler?.clear()
+        // @ts-ignore
+        const timeoutError = initialReqInit.__timeoutError;
+        if (timeoutError) {
+          // clear side effects
+          // @ts-ignore
+          delete initialReqInit.__timeoutError;
+          timeoutScheduler?.clear();
+
+          throw timeoutError;
         }
         throw err;
       });
 
     // @ts-ignore
     promise.cancel = (reason?: any) => {
-      initialReqInit.abortController?.abort(reason);
+      if (!initialReqInit.abortController?.signal.aborted) initialReqInit.abortController?.abort(reason);
     };
+
     return promise;
   }
 

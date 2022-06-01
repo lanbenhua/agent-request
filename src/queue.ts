@@ -142,10 +142,7 @@ class QueueScheduler {
   private _push<T>(task: QueueItem<T>) {
     this._queue = this._queue
       .concat(task)
-      .sort(
-        (a, b) =>
-          new QueuePriority(b.priority).num() - new QueuePriority(a.priority).num()
-      );
+      .sort((a, b) => new QueuePriority(b.priority).num() - new QueuePriority(a.priority).num());
 
     this._check();
   }
@@ -153,8 +150,7 @@ class QueueScheduler {
   private _pop() {
     this._pending--;
 
-    if (this._pending < 0)
-      throw new Error('Pop called more than there were pending fetches');
+    if (this._pending < 0) throw new Error('Pop called more than there were pending fetches');
 
     this._check();
   }

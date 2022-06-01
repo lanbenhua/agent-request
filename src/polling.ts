@@ -39,8 +39,7 @@ class PollingScheduler<T = unknown> {
   }
 
   private _cancel() {
-    if (this.__intervalId !== null && this.__intervalId !== undefined)
-      clearInterval(this.__intervalId);
+    if (this.__intervalId !== null && this.__intervalId !== undefined) clearInterval(this.__intervalId);
   }
 
   private _run(): Promise<T | undefined> {
