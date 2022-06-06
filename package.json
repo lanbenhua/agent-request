@@ -42,8 +42,6 @@
   "devDependencies": {
     "@rollup/plugin-node-resolve": "^13.3.0",
     "@rollup/plugin-typescript": "^8.3.2",
-    "@types/promise-polyfill": "^6.0.4",
-    "@types/whatwg-fetch": "0.0.33",
     "rollup": "^2.70.1",
     "rollup-plugin-terser": "^7.0.2",
     "tslib": "^2.3.1",

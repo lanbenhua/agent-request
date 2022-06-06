@@ -13,18 +13,33 @@ export const get_response_type = (res: Response): ContentType | undefined => {
   return undefined;
 };
 
+const lookbehinds = (
+  str: string,
+  regexp: RegExp,
+  cb: (...substr: string[]) => string
+) => {
+  return str.replace(regexp, cb);
+};
+
 export const path_join = (...paths: (string | null | undefined)[]): string => {
-  const non_pre_reg = /(?<!(https?|file|wss?):)\/\/+/;
   const pre_reg = /^(https?|file|wss?):\/\//;
 
-  return paths
-    .filter(Boolean)
-    .map(String)
-    .reduce((pre, path) => {
-      if (new RegExp(pre_reg).test(path)) return path;
-      return pre + '/' + path;
-    })
-    .replace(new RegExp(non_pre_reg, 'gm'), '/');
+  // safari do not support lookbehinds syntax
+  // we use replace function to instead it
+  return lookbehinds(
+    paths
+      .filter(Boolean)
+      .map(String)
+      .reduce((pre, path) => {
+        if (new RegExp(pre_reg).test(path)) return path;
+        return pre + '/' + path;
+      }),
+    /(https?:|file:|wss?:)?\/\/+/g,
+    ($0, $1) => {
+      console.log($0, $1);
+      return $1 ? $0 : '/';
+    }
+  );
 };
 
 export const resolve_search_params = (
