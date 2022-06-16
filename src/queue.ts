@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-inferrable-types */
 import { CustomCancelError } from './error';
-import { AgentFetch, AgentInit, AgentReqInit, AgentResponse, CancelablePromise } from './types/agent';
+import { AgentFetch, AgentReqInit, AgentResponse, CancelablePromise } from './types/agent';
 import { QueueItem, QueueOptions, QueueTask, QueueTaskPriority } from './types/queue';
 import { isNil } from './utils/is';
 
@@ -40,9 +40,6 @@ class QueueScheduler {
     this._pending = 0;
     this._options = { ...DEFAULT_QUEUE_OPTIONS, ...options };
 
-    this._resolve = this._resolve.bind(this);
-    this._reject = this._reject.bind(this);
-
     this.reconcurrency(concurrency);
   }
 
@@ -74,7 +71,7 @@ class QueueScheduler {
     this._isPaused = false;
 
     if (this._options?.auto) {
-      this._check();
+      this._tryRun();
     }
   }
 
@@ -83,7 +80,7 @@ class QueueScheduler {
 
     if (this._options?.auto) {
       // Trigger queued items if queue became bigger
-      this._check();
+      this._tryRun();
     }
   }
 
@@ -99,7 +96,13 @@ class QueueScheduler {
         reject,
       };
       this._push<T>(queueItem);
-    }).then(this._resolve, this._reject);
+    }).then((res) => {
+      this._pop();
+      return res;
+    }, (err) => {
+      this._pop();
+      throw err;
+    });
 
     promise.cancel = () => {
       queueItem && this._cancel<T>(queueItem);
@@ -109,26 +112,14 @@ class QueueScheduler {
   }
 
   public dequeue<T = unknown>() {
-    this._check<T>();
+    this._tryRun<T>();
   }
 
-  private _check<T>() {
+  private _tryRun<T>() {
     if (this._isPaused) return;
-    if (this._pending >= this.size) return;
+    if (this._pending >= this.concurrency) return;
     if (this._queue.length < 1) return;
 
-    this._run<T>();
-
-    // Flush all queued items until queue is full
-    this._check();
-  }
-
-  private _cancel<T>(task: QueueItem<T>) {
-    const { reject } = task;
-    reject(new CustomCancelError('Canceled', 'QueueCancelError'));
-  }
-
-  private _run<T>() {
     const task: QueueItem<T> | undefined | null = this._queue.shift();
     if (!task) return;
 
@@ -137,6 +128,14 @@ class QueueScheduler {
     const { runner, resolve, reject } = task;
 
     runner().then(resolve, reject);
+
+    // Flush all queued items until queue is full
+    this._tryRun();
+  }
+
+  private _cancel<T>(task: QueueItem<T>) {
+    const { reject } = task;
+    reject(new CustomCancelError('Canceled', 'QueueCancelError'));
   }
 
   private _push<T>(task: QueueItem<T>) {
@@ -144,7 +143,7 @@ class QueueScheduler {
       .concat(task)
       .sort((a, b) => new QueuePriority(b.priority).num() - new QueuePriority(a.priority).num());
 
-    this._check();
+    this._tryRun();
   }
 
   private _pop() {
@@ -152,17 +151,7 @@ class QueueScheduler {
 
     if (this._pending < 0) throw new Error('Pop called more than there were pending fetches');
 
-    this._check();
-  }
-
-  private _resolve(res: any): any {
-    this._pop();
-    return res;
-  }
-
-  private _reject(err: any) {
-    this._pop();
-    throw err;
+    this._tryRun();
   }
 }
 
