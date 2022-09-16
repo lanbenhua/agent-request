@@ -36,7 +36,6 @@ export const path_join = (...paths: (string | null | undefined)[]): string => {
       }),
     /(https?:|file:|wss?:)?\/\/+/g,
     ($0, $1) => {
-      console.log($0, $1);
       return $1 ? $0 : '/';
     }
   );
