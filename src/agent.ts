@@ -312,19 +312,18 @@ class Agent {
   }
 
   private decorateResponse<T, U>(init: AgentReqInit<T, U>, res: Response, data: T): AgentResponse<T, U> {
-    const clone = res.clone();
     return {
       data: data,
-      url: clone.url,
-      ok: clone.ok,
-      status: clone.status,
-      type: clone.type,
-      redirected: clone.redirected,
-      statusText: clone.statusText,
-      headers: clone.headers,
+      url: res.url,
+      ok: res.ok,
+      status: res.status,
+      type: res.type,
+      redirected: res.redirected,
+      statusText: res.statusText,
+      headers: res.headers,
       __init__: init,
       __agent__: this,
-      __response__: clone,
+      __response__: res,
     };
   }
 }
