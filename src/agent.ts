@@ -9,45 +9,33 @@ import { retryFetch } from './retry';
 import { TimeoutError } from './error';
 
 class Agent {
-  private _fetch: Fetch;
-  private _init?: AgentInit<any, any>;
-  private _queueSchedulerMap: Map<string, QueueScheduler> = new Map<string, QueueScheduler>();
-  private _interceptors = {
+  public originalFetch: Fetch;
+  public queueSchedulerMap: Map<string, QueueScheduler> = new Map<string, QueueScheduler>();
+  public interceptors = {
     request: new Interceptor<AgentReqInit<any, any>>(),
     response: new Interceptor<AgentResponse<any, any>>(),
   };
+  public initOptions?: AgentInit<any, any>;
 
-  public get agentInit(): AgentInit<any, any> | undefined {
-    return this._init;
-  }
-  public get queueSchedulerMap(): Map<string, QueueScheduler> {
-    return this._queueSchedulerMap;
-  }
-  public get interceptors() {
-    return this._interceptors;
-  }
-
-  constructor(fetch: Fetch, init?: AgentInit<any, any>) {
+  constructor(fetch: () => Fetch, init?: AgentInit<any, any>) {
     if (!fetch) throw new Error('Fetch must be a function but null');
 
-    this._fetch = fetch;
-    this._init = init;
-
+    this.originalFetch = fetch();
+    this.initOptions = init;
     this.init();
     
-    this._request = this._request.bind(this);
-    this._wrappedFetch = this._wrappedFetch.bind(this);
-    this._handleInterceptors = this._handleInterceptors.bind(this);
+    this.requester = this.requester.bind(this);
+    this.fetch = this.fetch.bind(this);
   }
 
   private init() {
-    this._initQueueScheduler();
+    this.initQueueScheduler();
 
-    this._interceptors.request.use((init) => {
+    this.interceptors.request.use((init) => {
       // set default method equals GET if none
       // then transform to upper case
       if (!init.url) {
-        let url = path_join(init?.base ?? this._init?.base, init.input);
+        let url = path_join(init?.base ?? this.initOptions?.base, init.input);
         // If the method is GET, we should merge the data of reqInit and url search
         if (init?.method?.toUpperCase() === Method.GET && init?.data) {
           const qIndex = url.indexOf('?');
@@ -89,47 +77,47 @@ class Agent {
     })
   }
 
-  private _initQueueScheduler() {
-    if (!this._init?.queue) return;
-    const { queue } = this._init;
-    if (!this._queueSchedulerMap) this._queueSchedulerMap = new Map<string, QueueScheduler>();
+  private initQueueScheduler() {
+    if (!this.initOptions?.queue) return;
+    const { queue } = this.initOptions;
+    if (!this.queueSchedulerMap) this.queueSchedulerMap = new Map<string, QueueScheduler>();
     const { concurrency, defaultName = 'default', concurrencies } = queue;
     if (concurrency) {
       const newQueue = new QueueScheduler(concurrency);
-      this._queueSchedulerMap.set(defaultName, newQueue);
+      this.queueSchedulerMap.set(defaultName, newQueue);
     }
     if (concurrencies) {
       Object.entries(concurrencies).map(([name, concurrency]) => {
         const newQueue = new QueueScheduler(concurrency);
-        this._queueSchedulerMap.set(name, newQueue);
+        this.queueSchedulerMap.set(name, newQueue);
       });
     }
   }
 
   public getQueue(name: string): QueueScheduler | undefined {
-    return this._queueSchedulerMap?.get(name);
+    return this.queueSchedulerMap?.get(name);
   }
 
   public request<T, U>(reqInit: AgentReqInit<T, U>): CancelablePromise<AgentResponse<T, U>> {
-    let fetcher: AgentFetch<T, U> = this._request;
+    let requester: AgentFetch<T, U> = this.requester;
 
     // enhance retry
-    const retry = this._init?.retry || reqInit.retry ? { ...this._init?.retry, ...reqInit.retry } : null;
-    if (retry) fetcher = retryFetch<T, U>(fetcher, retry)
+    const retry = this.initOptions?.retry || reqInit.retry ? { ...this.initOptions?.retry, ...reqInit.retry } : null;
+    if (retry) requester = retryFetch<T, U>(requester, retry)
 
     // enhance queue
-    const queue = this.getQueue(reqInit.queue?.name ?? this._init?.queue?.defaultName ?? 'default');
-    if (queue) fetcher = queueFetch<T, U>(fetcher, queue);
+    const queue = this.getQueue(reqInit.queue?.name ?? this.initOptions?.queue?.defaultName ?? 'default');
+    if (queue) requester = queueFetch<T, U>(requester, queue);
 
-    return fetcher(reqInit);
+    return requester(reqInit);
   }
 
-  private _request<T, U>(reqInit: AgentReqInit<T, U>): CancelablePromise<AgentResponse<T, U>> {
+  private requester<T, U>(reqInit: AgentReqInit<T, U>): CancelablePromise<AgentResponse<T, U>> {
     const initialReqInit = {
       ...reqInit,
-      base: reqInit.base ?? this._init?.base,
-      timeout: reqInit.timeout ?? this._init?.timeout,
-      retry: this._init?.retry || reqInit.retry ? { ...this._init?.retry, ...reqInit.retry } : undefined,
+      base: reqInit.base ?? this.initOptions?.base,
+      timeout: reqInit.timeout ?? this.initOptions?.timeout,
+      retry: this.initOptions?.retry || reqInit.retry ? { ...this.initOptions?.retry, ...reqInit.retry } : undefined,
       headers: {
         ...reqInit.headers,
       }
@@ -154,7 +142,7 @@ class Agent {
       })
     }
 
-    const promise = this._handleInterceptors<T, U>(initialReqInit)
+    const promise = this.handleInterceptors<T, U>(initialReqInit)
       .catch(err => {
         // @ts-ignore
         const timeoutError = initialReqInit.__timeoutError;
@@ -177,7 +165,7 @@ class Agent {
     return promise;
   }
 
-  private _handleInterceptors<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
+  private handleInterceptors<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
     const requestInterceptorChain: (
       | InterceptorInit<AgentReqInit<T, U>>['onFulfilled']
       | InterceptorInit<AgentReqInit<T, U>>['onRejected']
@@ -185,7 +173,7 @@ class Agent {
 
     let synchronousRequestInterceptors: boolean | undefined = true;
 
-    this._interceptors.request.forEach(interceptor => {
+    this.interceptors.request.forEach(interceptor => {
       const { runWhen, onFulfilled, onRejected } = interceptor;
 
       if (typeof runWhen === 'function' && runWhen(reqInit) === false) return;
@@ -193,15 +181,15 @@ class Agent {
       synchronousRequestInterceptors =
         synchronousRequestInterceptors && interceptor.synchronous;
 
-      requestInterceptorChain.unshift(onFulfilled, onRejected);
+      requestInterceptorChain.concat(onFulfilled, onRejected);
     });
 
     const responseInterceptorChain: (
       | InterceptorInit<AgentResponse<T, U>>['onFulfilled']
       | InterceptorInit<AgentResponse<T, U>>['onRejected']
     )[] = [];
-    this._interceptors.response.forEach(interceptor =>
-      responseInterceptorChain.unshift(
+    this.interceptors.response.forEach(interceptor =>
+      responseInterceptorChain.concat(
         interceptor.onFulfilled,
         interceptor.onRejected
       )
@@ -218,7 +206,7 @@ class Agent {
         | InterceptorInit<AgentResponse<T, U>>['onFulfilled']
       | InterceptorInit<AgentResponse<T, U>>['onRejected']
       )[] = [
-        (init: AgentReqInit<T, U>) => this._wrappedFetch(init), undefined
+        (init: AgentReqInit<T, U>) => this.fetch(init), undefined
       ];
 
       Array.prototype.unshift.apply(chain, requestInterceptorChain);
@@ -252,7 +240,7 @@ class Agent {
       }
     }
 
-    let responsePromiseChain: Promise<AgentResponse<T, U>> = this._wrappedFetch(
+    let responsePromiseChain: Promise<AgentResponse<T, U>> = this.fetch(
       chainReqInit
     );
 
@@ -274,7 +262,7 @@ class Agent {
     return responsePromiseChain;
   }
 
-  private _wrappedFetch<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
+  private fetch<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
     let __res__: Response;
 
     const url = reqInit.url || reqInit.input;
@@ -288,11 +276,11 @@ class Agent {
         )
       );
 
-    return this._fetch(url, reqInit)
+    return this.originalFetch(url, reqInit)
       .then(res => {
         __res__ = res;
 
-        const responseType = this._checkResponseType(res, reqInit.responseType);
+        const responseType = this.getResponseType(res, reqInit.responseType);
 
         if (responseType === ContentType.JSON) return res.json();
         if (responseType === ContentType.BUFFER) return res.arrayBuffer();
@@ -304,38 +292,39 @@ class Agent {
         )
           return res.formData();
 
-        throw new Error(`Agent: unexcepted response type '${responseType}'`);
+        return res.text();
       })
-      .then(data => this._decorateResponse<T, U>(reqInit, __res__, data));
+      .then(data => this.decorateResponse<T, U>(reqInit, __res__, data));
   }
 
-  private _checkResponseType(res: Response, responseType: ContentType | SupportedContentType | undefined): ContentType | SupportedContentType | undefined {
+  private getResponseType(res: Response, responseType: ContentType | SupportedContentType | undefined): ContentType | SupportedContentType | undefined {
     const responseTypeFromResponse = get_response_type(res);
     if (!responseType && !responseTypeFromResponse)
-      throw new Error('Agent: except a response type but null');
+      console.warn('Agent: except a response type but null')
     if (
       responseTypeFromResponse &&
       responseType &&
       responseTypeFromResponse !== responseType
     ) {
-      throw new Error(
-        `Agent: except a '${responseType}' response type but '${responseTypeFromResponse}'`
-      );
+      console.warn(`Agent: except a '${responseType}' response type but '${responseTypeFromResponse}'`)
     }
-    return responseType || responseTypeFromResponse;
+    return responseTypeFromResponse ?? responseType;
   }
 
-  private _decorateResponse<T, U>(init: AgentReqInit<T, U>, res: Response, data: T): AgentResponse<T, U> {
+  private decorateResponse<T, U>(init: AgentReqInit<T, U>, res: Response, data: T): AgentResponse<T, U> {
+    const clone = res.clone();
     return {
       data: data,
-      url: res.url,
-      ok: res.ok,
-      status: res.status,
-      statusText: res.statusText,
-      headers: res.headers,
+      url: clone.url,
+      ok: clone.ok,
+      status: clone.status,
+      type: clone.type,
+      redirected: clone.redirected,
+      statusText: clone.statusText,
+      headers: clone.headers,
       __init__: init,
       __agent__: this,
-      __response__: res,
+      __response__: clone,
     };
   }
 }

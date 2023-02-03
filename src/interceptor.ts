@@ -29,7 +29,8 @@ class InterceptorManager<T> {
   }
 
   public forEach(h: (handler: InterceptorInit<T>, index: number) => void) {
-    this.handlers.forEach((handler, index) => {
+    this.handlers.sort((a, b) => a?.initial ? -1 : (b?.priority ?? 0) - (a?.priority ?? 0))
+    .forEach((handler, index) => {
       if (handler !== null) {
         h(handler, index);
       }

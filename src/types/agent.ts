@@ -72,6 +72,8 @@ export interface AgentResponse<T, U> {
   ok: boolean;
   status: number;
   statusText: string;
+  redirected: boolean;
+  type: ResponseType;
   headers: Response['headers'];
   __init__: AgentReqInit<T, U>;
   __agent__: Agent;

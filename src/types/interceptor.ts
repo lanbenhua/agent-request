@@ -3,6 +3,8 @@ type InterceptorFulfilled<T> = (response: T) => T | Promise<T>;
 type InterceptorRejected = (error: any) => any;
 
 export interface InterceptorOptions<T> {
+  initial?: boolean;
+  priority?: number;
   synchronous?: boolean;
   runWhen?: ((init: T) => boolean) | null;
 };

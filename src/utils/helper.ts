@@ -13,6 +13,22 @@ export const get_response_type = (res: Response): ContentType | undefined => {
   return undefined;
 };
 
+
+export const get_content_type = (
+  type?: string | ContentType | SupportedContentType
+): string | undefined => {
+  const ContentTypeMap: Record<string, string | undefined> = {
+    json: 'application/json; charset=utf-8',
+    form: 'application/x-www-form-urlencoded; charset=utf-8',
+    formdata: undefined,
+    buffer: 'text/plain; charset=utf-8',
+    text: 'text/plain; charset=utf-8',
+    blob: undefined,
+  };
+
+  return type && ContentTypeMap[type];
+};
+
 const lookbehinds = (
   str: string,
   regexp: RegExp,
@@ -56,17 +72,3 @@ export const resolve_search_params = (
   return q2.toString();
 };
 
-export const get_content_type = (
-  type?: string | ContentType | SupportedContentType
-): string | undefined => {
-  const ContentTypeMap: Record<string, string | undefined> = {
-    json: 'application/json; charset=utf-8',
-    form: 'application/x-www-form-urlencoded; charset=utf-8',
-    formdata: undefined,
-    buffer: 'text/plain; charset=utf-8',
-    text: 'text/plain; charset=utf-8',
-    blob: undefined,
-  };
-
-  return type && ContentTypeMap[type];
-};
