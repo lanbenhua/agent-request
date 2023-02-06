@@ -1,4 +1,4 @@
-import { InterceptorInit, InterceptorOptions } from "./types/interceptor";
+import { InterceptorInit, InterceptorLevel, InterceptorOptions } from "./types/interceptor";
 
 class InterceptorManager<T> {
   public handlers: (InterceptorInit<T> | null)[] = [];
@@ -29,7 +29,15 @@ class InterceptorManager<T> {
   }
 
   public forEach(h: (handler: InterceptorInit<T>, index: number) => void) {
-    this.handlers.sort((a, b) => a?.initial ? -1 : (b?.priority ?? 0) - (a?.priority ?? 0))
+    this.handlers.sort((a, b) => {
+      const 
+        aLevel = a?.level ?? InterceptorLevel.Normal,
+        bLevel = b?.level ?? InterceptorLevel.Normal,
+        aPriority = a?.priority ?? 0,
+        bPriority = b?.priority ?? 0;
+
+      return (aLevel - bLevel) || (bPriority - aPriority);
+    })
     .forEach((handler, index) => {
       if (handler !== null) {
         h(handler, index);

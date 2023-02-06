@@ -72,3 +72,6 @@ export const resolve_search_params = (
   return q2.toString();
 };
 
+export const getOriginalFetch = () => {
+  return self && self.fetch ? self.fetch : global && global.fetch ? global.fetch : typeof window !== 'undefined' ? window.fetch : undefined
+}

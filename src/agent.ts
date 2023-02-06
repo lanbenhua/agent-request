@@ -1,6 +1,6 @@
 import { Method, Fetch, SupportedContentType, ContentType, CancelablePromise, AgentInit, AgentReqInit, AgentResponse, AgentFetch } from './types/agent';
-import { get_content_type, get_response_type, path_join, resolve_search_params } from './utils/helper';
-import { InterceptorInit } from './types/interceptor';
+import { getOriginalFetch, get_content_type, get_response_type, path_join, resolve_search_params } from './utils/helper';
+import { InterceptorInit, InterceptorLevel } from './types/interceptor';
 import QueueScheduler, { queueFetch } from './queue';
 import BodyParser from './body-parser';
 import Interceptor from './interceptor';
@@ -17,15 +17,15 @@ class Agent {
   };
   public initOptions?: AgentInit<any, any>;
 
-  constructor(fetch: () => Fetch, init?: AgentInit<any, any>) {
+  constructor(fetch?: Fetch, init?: AgentInit<any, any>) {
     if (!fetch) throw new Error('Fetch must be a function but null');
 
-    this.originalFetch = fetch();
+    this.originalFetch = fetch ?? getOriginalFetch();
     this.initOptions = init;
     this.init();
     
     this.requester = this.requester.bind(this);
-    this.fetch = this.fetch.bind(this);
+    this.wrappedFetch = this.wrappedFetch.bind(this);
   }
 
   private init() {
@@ -74,7 +74,16 @@ class Agent {
       return init;
     }, (err) => {
       return Promise.reject(err)
-    })
+    }, { level: InterceptorLevel.Initial });
+
+    this.interceptors.response.use((res) => {
+      // if (!res.ok) throw new Error(res.statusText);
+      res.data = this.getResponseData(res)
+      return res;
+    }, (err) => {
+      return Promise.reject(err)
+    }, { level: InterceptorLevel.Buildin });
+
   }
 
   private initQueueScheduler() {
@@ -123,6 +132,8 @@ class Agent {
       }
     };
 
+    let __timeoutError: TimeoutError | null = null;
+
     // enhance timeout
     let timeoutScheduler: TimeoutScheduler | undefined;
     if (initialReqInit.timeout) {
@@ -135,24 +146,19 @@ class Agent {
       timeoutScheduler = new TimeoutScheduler(initialReqInit.timeout, controller);
       timeoutScheduler.wait().then(() => {
         if (!controller?.signal.aborted) {
-          // @ts-ignore
-          initialReqInit.__timeoutError = new TimeoutError('Timeout of exceeded', 'TimeoutError');
+          __timeoutError = new TimeoutError('Timeout of exceeded', 'TimeoutError');
           controller?.abort('Timeout of exceeded');
         };
       })
     }
 
+   
     const promise = this.handleInterceptors<T, U>(initialReqInit)
       .catch(err => {
-        // @ts-ignore
-        const timeoutError = initialReqInit.__timeoutError;
-        if (timeoutError) {
+        if (__timeoutError) {
           // clear side effects
-          // @ts-ignore
-          delete initialReqInit.__timeoutError;
           timeoutScheduler?.clear();
-
-          throw timeoutError;
+          throw __timeoutError;
         }
         throw err;
       });
@@ -198,15 +204,9 @@ class Agent {
     let promiseChain: Promise<AgentResponse<T, U> | AgentReqInit<T, U>>;
 
     if (!synchronousRequestInterceptors) {
-      let chain: (
-        | InterceptorInit<AgentReqInit<T, U>>['onFulfilled']
-        | InterceptorInit<AgentReqInit<T, U>>['onRejected']
-        | undefined
-        | ((reqInit: AgentReqInit<T, U>) => Promise<AgentResponse<T, U>>)
-        | InterceptorInit<AgentResponse<T, U>>['onFulfilled']
-      | InterceptorInit<AgentResponse<T, U>>['onRejected']
-      )[] = [
-        (init: AgentReqInit<T, U>) => this.fetch(init), undefined
+      let chain: any[] = [
+        (init: AgentReqInit<T, U>) => this.wrappedFetch(init), 
+        (err) => Promise.reject(err)
       ];
 
       Array.prototype.unshift.apply(chain, requestInterceptorChain);
@@ -217,7 +217,7 @@ class Agent {
         const onFulfilled = chain.shift();
         const onRejected = chain.shift();
         if (onFulfilled)
-          promiseChain = promiseChain.then(onFulfilled as never, onRejected);
+          promiseChain = promiseChain.then(onFulfilled, onRejected);
       }
 
       return promiseChain as Promise<AgentResponse<T, U>>;
@@ -240,15 +240,12 @@ class Agent {
       }
     }
 
-    let responsePromiseChain: Promise<AgentResponse<T, U>> = this.fetch(
-      chainReqInit
-    );
+    let responsePromiseChain = this.wrappedFetch(chainReqInit);
 
     while (responseInterceptorChain.length) {
       const onFulfilled:
         | InterceptorInit<AgentResponse<T, U>>['onFulfilled']
-        | undefined = responseInterceptorChain.shift() as InterceptorInit<AgentResponse<T, U>>['onFulfilled']
-      ;
+        | undefined = responseInterceptorChain.shift();
       const onRejected:
         | InterceptorInit<AgentResponse<T, U>>['onRejected']
         | undefined = responseInterceptorChain.shift();
@@ -259,12 +256,10 @@ class Agent {
         );
     }
 
-    return responsePromiseChain;
+    return responsePromiseChain as Promise<AgentResponse<T, U>>;
   }
 
-  private fetch<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
-    let __res__: Response;
-
+  private wrappedFetch<T, U>(reqInit: AgentReqInit<T, U>): Promise<AgentResponse<T, U>> {
     const url = reqInit.url || reqInit.input;
 
     // Actually this wil be never reached!
@@ -276,25 +271,9 @@ class Agent {
         )
       );
 
-    return this.originalFetch(url, reqInit)
-      .then(res => {
-        __res__ = res;
-
-        const responseType = this.getResponseType(res, reqInit.responseType);
-
-        if (responseType === ContentType.JSON) return res.json();
-        if (responseType === ContentType.BUFFER) return res.arrayBuffer();
-        if (responseType === ContentType.TEXT) return res.text();
-        if (responseType === ContentType.BLOB) return res.blob();
-        if (
-          responseType === ContentType.FORM ||
-          responseType === ContentType.FORMDATA
-        )
-          return res.formData();
-
-        return res.text();
-      })
-      .then(data => this.decorateResponse<T, U>(reqInit, __res__, data));
+    return this.originalFetch(url, reqInit).then(res => {
+      return this.decorateResponse<T, U>(reqInit, res, undefined)
+    });
   }
 
   private getResponseType(res: Response, responseType: ContentType | SupportedContentType | undefined): ContentType | SupportedContentType | undefined {
@@ -311,19 +290,37 @@ class Agent {
     return responseTypeFromResponse ?? responseType;
   }
 
-  private decorateResponse<T, U>(init: AgentReqInit<T, U>, res: Response, data: T): AgentResponse<T, U> {
+  private getResponseData<T, U>(res: AgentResponse<T, U>) {
+    const response = res.__response__;
+    const init = res.__init__;
+    const responseType = this.getResponseType(response, init.responseType);
+
+    if (responseType === ContentType.JSON) return response.json();
+    if (responseType === ContentType.BUFFER) return response.arrayBuffer();
+    if (responseType === ContentType.TEXT) return response.text();
+    if (responseType === ContentType.BLOB) return response.blob();
+    if (
+      responseType === ContentType.FORM ||
+      responseType === ContentType.FORMDATA
+    )
+      return response.formData();
+
+    return response.text();
+  }
+
+  private decorateResponse<T, U>(init: AgentReqInit<T, U>, response: Response, data?: T): AgentResponse<T, U> {
     return {
       data: data,
-      url: res.url,
-      ok: res.ok,
-      status: res.status,
-      type: res.type,
-      redirected: res.redirected,
-      statusText: res.statusText,
-      headers: res.headers,
+      url: response.url,
+      ok: response.ok,
+      status: response.status,
+      type: response.type,
+      redirected: response.redirected,
+      statusText: response.statusText,
+      headers: response.headers,
       __init__: init,
       __agent__: this,
-      __response__: res,
+      __response__: response,
     };
   }
 }
