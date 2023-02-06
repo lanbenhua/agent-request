@@ -73,5 +73,5 @@ export const resolve_search_params = (
 };
 
 export const getOriginalFetch = () => {
-  return self && self.fetch ? self.fetch : global && global.fetch ? global.fetch : typeof window !== 'undefined' ? window.fetch : undefined
+  return self && self.fetch ? self.fetch : global && global.fetch ? global.fetch : typeof window !== 'undefined' ? window.fetch : () => Promise.resolve()
 }

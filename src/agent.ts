@@ -9,7 +9,7 @@ import { retryFetch } from './retry';
 import { TimeoutError } from './error';
 
 class Agent {
-  public originalFetch: Fetch;
+  public originalFetch?: Fetch;
   public queueSchedulerMap: Map<string, QueueScheduler> = new Map<string, QueueScheduler>();
   public interceptors = {
     request: new Interceptor<AgentReqInit<any, any>>(),
@@ -18,9 +18,8 @@ class Agent {
   public initOptions?: AgentInit<any, any>;
 
   constructor(fetch?: Fetch, init?: AgentInit<any, any>) {
-    if (!fetch) throw new Error('Fetch must be a function but null');
-
-    this.originalFetch = fetch ?? getOriginalFetch();
+    // if (!fetch) throw new Error('Fetch must be a function but null');
+    this.originalFetch = fetch ?? getOriginalFetch() as Fetch;
     this.initOptions = init;
     this.init();
     
@@ -187,7 +186,7 @@ class Agent {
       synchronousRequestInterceptors =
         synchronousRequestInterceptors && interceptor.synchronous;
 
-      requestInterceptorChain.concat(onFulfilled, onRejected);
+      requestInterceptorChain.push(onFulfilled, onRejected);
     });
 
     const responseInterceptorChain: (
@@ -195,7 +194,7 @@ class Agent {
       | InterceptorInit<AgentResponse<T, U>>['onRejected']
     )[] = [];
     this.interceptors.response.forEach(interceptor =>
-      responseInterceptorChain.concat(
+      responseInterceptorChain.push(
         interceptor.onFulfilled,
         interceptor.onRejected
       )
@@ -264,12 +263,8 @@ class Agent {
 
     // Actually this wil be never reached!
     // if reached, must be an unexcepted error
-    if (!url)
-      return Promise.reject(
-        new Error(
-          'Agent: unexpected error, url must have a value and be a string, but null!'
-        )
-      );
+    if (!this.originalFetch) throw new Error('Agent: expect a original fetch but null!');
+    if (!url) return Promise.reject(new Error('Agent: unexpected error, url must have a value and be a string, but null!'))
 
     return this.originalFetch(url, reqInit).then(res => {
       return this.decorateResponse<T, U>(reqInit, res, undefined)

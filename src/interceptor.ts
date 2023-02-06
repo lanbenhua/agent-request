@@ -13,8 +13,11 @@ class InterceptorManager<T> {
     options?: InterceptorOptions<T>
   ): number {
     this.handlers = this.handlers.concat({
+      ...options,
       onFulfilled: onFulfilled,
       onRejected: onRejected,
+      level: options?.level,
+      priority: options?.priority,
       synchronous: options ? options.synchronous : false,
       runWhen: options ? options.runWhen : null,
     });
