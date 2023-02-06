@@ -75,9 +75,9 @@ class Agent {
       return Promise.reject(err)
     }, { level: InterceptorLevel.Initial });
 
-    this.interceptors.response.use((res) => {
+    this.interceptors.response.use(async(res) => {
       // if (!res.ok) throw new Error(res.statusText);
-      res.data = this.getResponseData(res)
+      res.data = await this.getResponseData(res)
       return res;
     }, (err) => {
       return Promise.reject(err)
